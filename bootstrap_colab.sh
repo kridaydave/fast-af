@@ -6,6 +6,8 @@ set -euo pipefail
 
 echo "[1/4] installing deps on top of Colab's preinstalled torch (do NOT reinstall torch)..."
 pip install --quiet --no-cache-dir pyyaml datasets accelerate safetensors transformers bitsandbytes
+# sentencepiece is a dllm dep and often fails to build from source on Colab.
+pip install --quiet --no-cache-dir --prefer-binary sentencepiece || true
 # dLLM is only for the diffusion paradigm check; don't block AR if it fails.
 pip install --quiet --no-cache-dir "git+https://github.com/ZHZisZZ/dllm.git" || echo "WARN: dLLM install failed; diffusion models will be skipped."
 python -c "import torch; assert torch.cuda.is_available(), 'NO GPU — switch Runtime to T4'; print('torch', torch.__version__, '| CUDA ok |', torch.cuda.get_device_name(0))"
