@@ -5,7 +5,7 @@ import statistics
 import time
 from pathlib import Path
 
-from .backends import VllmBackend, DllmBackend, CustomBackend, Generation
+from .backends import TransformersBackend, DllmBackend, CustomBackend, Generation
 from .humaneval import run_humaneval
 
 # Prompts for the speed harness: coding-style, batch 1, out_len tokens each.
@@ -18,9 +18,9 @@ _SPEED_PROMPTS = [
 
 def _build_backend(m: dict, common: dict):
     b = m["backend"]
-    if b == "vllm":
-        return VllmBackend(m["repo"], m.get("quant"), m.get("eagle3", False),
-                           common["dtype"])
+    if b in ("vllm", "hf"):
+        return TransformersBackend(m["repo"], m.get("quant"),
+                                   common["dtype"])
     if b == "dllm":
         return DllmBackend(m["repo"], m.get("mode", "default"),
                            m.get("steps", 8), common["dtype"])

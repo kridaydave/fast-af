@@ -31,48 +31,52 @@ class Generation:
     decode_seconds: float
 
 
-class VllmBackend:
-    """Autoregressive models driven by vLLM, greedy decode, batch 1.
+class TransformersBackend:
+    """Autoregressive models via HuggingFace generate, greedy (do_sample=False),
+    batch 1. Robust on free T4 without vLLM's version gymnastics.
 
-    vLLM reports per-request timing in `outputs[i].stats.times`; we take
-    decode_end - prompt_end as the decode window (prefill excluded).
+    Timing note: we time the whole generate() call, so prompt prefill is
+    included in the decode window. For batch-1 single-stream that's small vs
+    the 1k-token output and consistent across AR models, so the TPS *ratios*
+    (B1/B2 vs B0) the spec wants are unaffected. Swap in a vLLM backend later
+    if absolute TPS matters.
     """
 
-    def __init__(self, repo: str, quant: str | None, eagle3: bool, dtype: str,
-                 gpu_mem_util: float = 0.9):
-        from vllm import LLM
-        kwargs: dict[str, Any] = dict(
-            dtype=dtype,
-            gpu_memory_utilization=gpu_mem_util,
-            enforce_eager=True,          # stable timing on T4 (no CUDA graphs)
-            max_model_len=2048,
-            quantization=None,
-        )
+    def __init__(self, repo: str, quant: str | None, dtype: str,
+                 max_model_len: int = 2048):
+        import torch
+        from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                                  BitsAndBytesConfig)
+        self.device = "cuda"
+        torch_dtype = torch.float16 if dtype == "float16" else torch.float32
+        kw: dict[str, Any] = dict(torch_dtype=torch_dtype, device_map="cuda",
+                                  trust_remote_code=True)
         if quant == "int4":
-            kwargs["quantization"] = "gptq"     # T4 has no AWQ; GPTQ int4
-        if eagle3:
-            # EAGLE-3 speculative decoding. vLLM's native support targets newer
-            # GPUs; if this raises on T4, fall back to llama.cpp spec-decode and
-            # implement a CustomBackend (budget a day of friction, per spec).
-            kwargs["speculative_config"] = {
-                "method": "eagle",
-                "model": f"{repo}/eagle3",
-            }
-        self.llm = LLM(model=repo, **kwargs)
+            kw["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
+        self.model = AutoModelForCausalLM.from_pretrained(repo, **kw)
+        self.tokenizer = AutoTokenizer.from_pretrained(repo,
+                                                       trust_remote_code=True)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.max_model_len = max_model_len
 
     def warmup(self) -> None:
-        from vllm import SamplingParams
-        sp = SamplingParams(n=1, temperature=0.0, max_tokens=8)
-        self.llm.generate(["warmup"], sp)
+        self.generate("the quick brown fox", 8)
 
     def generate(self, prompt: str, out_len: int) -> Generation:
-        from vllm import SamplingParams
-        sp = SamplingParams(n=1, temperature=0.0, max_tokens=out_len)
-        out = self.llm.generate([prompt], sp)[0]
-        stats = out.outputs[0].stats
-        gen_tokens = stats.num_generated_tokens
-        decode_s = float(stats.times.decode_end - stats.times.prompt_end)
-        return Generation(text=out.outputs[0].text, num_tokens=gen_tokens,
+        import torch
+        enc = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        plen = enc["input_ids"].shape[1]
+        t0 = time.perf_counter()
+        with torch.no_grad():
+            out = self.model.generate(
+                **enc, max_new_tokens=out_len, do_sample=False,
+                pad_token_id=self.tokenizer.pad_token_id)
+        decode_s = time.perf_counter() - t0
+        toks = int(out.shape[1] - plen)
+        text = self.tokenizer.decode(out[0, plen:], skip_special_tokens=True)
+        return Generation(text=text, num_tokens=max(toks, 1),
                           decode_seconds=max(decode_s, 1e-6))
 
 

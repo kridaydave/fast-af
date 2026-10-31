@@ -20,7 +20,7 @@ for AR models, `humaneval.pass@1`.
 
 | backend  | models | status |
 |---|---|---|
-| vllm   | SmolLM2-135M, Qwen3.5-0.8B (+int4, +EAGLE-3), LFM2.5-350M | ready; EAGLE-3 may fall back to llama.cpp spec-decode on T4 |
+| hf     | SmolLM2-135M, Qwen3.5-0.8B (+int4, +EAGLE-3), LFM2.5-350M | ready; EAGLE-3 spec-decode not auto-wired, runs as plain int4 AR |
 | dllm   | LLaDA-8B (default + Fast-dLLM) | dLLM `generate` is called natively; verify API vs installed dLLM |
 | custom | smoldlm-144m | **needs wiring**: its `score_fn` + tokenizer in `bench/backends.py` |
 

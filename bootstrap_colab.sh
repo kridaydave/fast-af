@@ -4,15 +4,14 @@
 # writes the harness, and (optionally) runs it.
 set -euo pipefail
 
-echo "[1/4] installing env (torch cu121, vLLM for sm75, dLLM)..."
-pip install --quiet --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-pip install --quiet --no-cache-dir "vllm==0.6.3.post2"
-pip install --quiet --no-cache-dir "git+https://github.com/ZHZisZZ/dllm.git"
-pip install --quiet --no-cache-dir pyyaml datasets accelerate safetensors
+echo "[1/4] installing env (torch+torchvision cu121, dLLM)..."
+pip install --quiet --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
+pip install --quiet --no-cache-dir pyyaml datasets accelerate safetensors transformers
+# dLLM is only for the diffusion paradigm check; don't block AR if it fails.
+pip install --quiet --no-cache-dir "git+https://github.com/ZHZisZZ/dllm.git" || echo "WARN: dLLM install failed; diffusion models will be skipped."
 
 echo "[2/4] writing harness..."
 mkdir -p bench
-
 cat > bench/config.yaml <<'BENCH_EOF_bench_config_yaml'
 # Benchmark week roster for EdgeFast-Diff 1B (D1 = 100M).
 #
@@ -39,36 +38,36 @@ common:
 models:
   # ---- AR baselines, ~100M band (D1's scale) ----
   - id: smollm2-135m
-    backend: vllm
+    backend: hf
     repo: HuggingFaceTB/SmolLM2-135M-Instruct
     quant: null
     humaneval: true
     note: "135M AR, Apache-2.0, L1 yardstick"
 
   - id: qwen3.5-0.8b            # B0
-    backend: vllm
+    backend: hf
     repo: Qwen/Qwen3.5-0.8B
     quant: null
     humaneval: true
     note: "GDN hybrid AR, same family as D1. B1/B2 build on this."
 
   - id: qwen3.5-0.8b-int4       # B1
-    backend: vllm
+    backend: hf
     repo: Qwen/Qwen3.5-0.8B
     quant: int4                 # GPTQ int4 (T4 has no AWQ)
     humaneval: true
     note: "B0 + int4 QAT, expected ~2x vs B0"
 
   - id: qwen3.5-0.8b-eagle3     # B2
-    backend: vllm
+    backend: hf
     repo: Qwen/Qwen3.5-0.8B
     quant: int4
     eagle3: true                # speculative decode; budget a day of friction
     humaneval: true
-    note: "B0 + int4 + EAGLE-3, expected 3-6x vs B0; may need llama.cpp spec-decode"
+    note: "B0 + int4 + EAGLE-3, expected 3-6x vs B0; EAGLE-3 spec-decode NOT auto-wired (needs llama.cpp or vLLM), runs as plain int4 AR until wired"
 
   - id: lfm2.5-350m
-    backend: vllm
+    backend: hf
     repo: LiquidAI/LFM2.5-350M
     quant: null
     humaneval: true
@@ -101,7 +100,6 @@ models:
     humaneval: false
     note: "LLaDA-8B with Fast-dLLM decode; the tuned-policy comparison"
 BENCH_EOF_bench_config_yaml
-
 cat > bench/backends.py <<'BENCH_EOF_bench_backends_py'
 """Model backends for the benchmark harness.
 
@@ -136,48 +134,52 @@ class Generation:
     decode_seconds: float
 
 
-class VllmBackend:
-    """Autoregressive models driven by vLLM, greedy decode, batch 1.
+class TransformersBackend:
+    """Autoregressive models via HuggingFace generate, greedy (do_sample=False),
+    batch 1. Robust on free T4 without vLLM's version gymnastics.
 
-    vLLM reports per-request timing in `outputs[i].stats.times`; we take
-    decode_end - prompt_end as the decode window (prefill excluded).
+    Timing note: we time the whole generate() call, so prompt prefill is
+    included in the decode window. For batch-1 single-stream that's small vs
+    the 1k-token output and consistent across AR models, so the TPS *ratios*
+    (B1/B2 vs B0) the spec wants are unaffected. Swap in a vLLM backend later
+    if absolute TPS matters.
     """
 
-    def __init__(self, repo: str, quant: str | None, eagle3: bool, dtype: str,
-                 gpu_mem_util: float = 0.9):
-        from vllm import LLM
-        kwargs: dict[str, Any] = dict(
-            dtype=dtype,
-            gpu_memory_utilization=gpu_mem_util,
-            enforce_eager=True,          # stable timing on T4 (no CUDA graphs)
-            max_model_len=2048,
-            quantization=None,
-        )
+    def __init__(self, repo: str, quant: str | None, dtype: str,
+                 max_model_len: int = 2048):
+        import torch
+        from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                                  BitsAndBytesConfig)
+        self.device = "cuda"
+        torch_dtype = torch.float16 if dtype == "float16" else torch.float32
+        kw: dict[str, Any] = dict(torch_dtype=torch_dtype, device_map="cuda",
+                                  trust_remote_code=True)
         if quant == "int4":
-            kwargs["quantization"] = "gptq"     # T4 has no AWQ; GPTQ int4
-        if eagle3:
-            # EAGLE-3 speculative decoding. vLLM's native support targets newer
-            # GPUs; if this raises on T4, fall back to llama.cpp spec-decode and
-            # implement a CustomBackend (budget a day of friction, per spec).
-            kwargs["speculative_config"] = {
-                "method": "eagle",
-                "model": f"{repo}/eagle3",
-            }
-        self.llm = LLM(model=repo, **kwargs)
+            kw["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
+        self.model = AutoModelForCausalLM.from_pretrained(repo, **kw)
+        self.tokenizer = AutoTokenizer.from_pretrained(repo,
+                                                       trust_remote_code=True)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.max_model_len = max_model_len
 
     def warmup(self) -> None:
-        from vllm import SamplingParams
-        sp = SamplingParams(n=1, temperature=0.0, max_tokens=8)
-        self.llm.generate(["warmup"], sp)
+        self.generate("the quick brown fox", 8)
 
     def generate(self, prompt: str, out_len: int) -> Generation:
-        from vllm import SamplingParams
-        sp = SamplingParams(n=1, temperature=0.0, max_tokens=out_len)
-        out = self.llm.generate([prompt], sp)[0]
-        stats = out.outputs[0].stats
-        gen_tokens = stats.num_generated_tokens
-        decode_s = float(stats.times.decode_end - stats.times.prompt_end)
-        return Generation(text=out.outputs[0].text, num_tokens=gen_tokens,
+        import torch
+        enc = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        plen = enc["input_ids"].shape[1]
+        t0 = time.perf_counter()
+        with torch.no_grad():
+            out = self.model.generate(
+                **enc, max_new_tokens=out_len, do_sample=False,
+                pad_token_id=self.tokenizer.pad_token_id)
+        decode_s = time.perf_counter() - t0
+        toks = int(out.shape[1] - plen)
+        text = self.tokenizer.decode(out[0, plen:], skip_special_tokens=True)
+        return Generation(text=text, num_tokens=max(toks, 1),
                           decode_seconds=max(decode_s, 1e-6))
 
 
@@ -294,7 +296,6 @@ class CustomBackend:
         return Generation(text=text, num_tokens=revealed,
                           decode_seconds=max(decode_s, 1e-6))
 BENCH_EOF_bench_backends_py
-
 cat > bench/humaneval.py <<'BENCH_EOF_bench_humaneval_py'
 """HumanEval pass@1 guardrail (n=1, exec-based).
 
@@ -380,7 +381,6 @@ def run_humaneval(gen_fn, prompts: int = 50) -> dict[str, Any]:
     n = len(rows)
     return {"n": n, "passed": passed, "pass@1": passed / n if n else 0.0}
 BENCH_EOF_bench_humaneval_py
-
 cat > bench/run.py <<'BENCH_EOF_bench_run_py'
 """Benchmark week orchestration: load roster, run each model, write JSON."""
 from __future__ import annotations
@@ -389,7 +389,7 @@ import statistics
 import time
 from pathlib import Path
 
-from .backends import VllmBackend, DllmBackend, CustomBackend, Generation
+from .backends import TransformersBackend, DllmBackend, CustomBackend, Generation
 from .humaneval import run_humaneval
 
 # Prompts for the speed harness: coding-style, batch 1, out_len tokens each.
@@ -402,9 +402,9 @@ _SPEED_PROMPTS = [
 
 def _build_backend(m: dict, common: dict):
     b = m["backend"]
-    if b == "vllm":
-        return VllmBackend(m["repo"], m.get("quant"), m.get("eagle3", False),
-                           common["dtype"])
+    if b in ("vllm", "hf"):
+        return TransformersBackend(m["repo"], m.get("quant"),
+                                   common["dtype"])
     if b == "dllm":
         return DllmBackend(m["repo"], m.get("mode", "default"),
                            m.get("steps", 8), common["dtype"])
@@ -476,14 +476,12 @@ def run(config_path: str, output_path: str | None = None) -> list[dict]:
         print(f"[done] wrote {output_path}", flush=True)
     return results
 BENCH_EOF_bench_run_py
-
 cat > bench/__init__.py <<'BENCH_EOF_bench___init___py'
 """EdgeFast-Diff 1B benchmark week harness."""
 from .run import run, run_model
 
 __all__ = ["run", "run_model"]
 BENCH_EOF_bench___init___py
-
 cat > bench/__main__.py <<'BENCH_EOF_bench___main___py'
 """CLI entry: python -m bench --config bench/config.yaml --out results.yaml"""
 import argparse

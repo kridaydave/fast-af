@@ -23,36 +23,36 @@ common:
 models:
   # ---- AR baselines, ~100M band (D1's scale) ----
   - id: smollm2-135m
-    backend: vllm
+    backend: hf
     repo: HuggingFaceTB/SmolLM2-135M-Instruct
     quant: null
     humaneval: true
     note: "135M AR, Apache-2.0, L1 yardstick"
 
   - id: qwen3.5-0.8b            # B0
-    backend: vllm
+    backend: hf
     repo: Qwen/Qwen3.5-0.8B
     quant: null
     humaneval: true
     note: "GDN hybrid AR, same family as D1. B1/B2 build on this."
 
   - id: qwen3.5-0.8b-int4       # B1
-    backend: vllm
+    backend: hf
     repo: Qwen/Qwen3.5-0.8B
     quant: int4                 # GPTQ int4 (T4 has no AWQ)
     humaneval: true
     note: "B0 + int4 QAT, expected ~2x vs B0"
 
   - id: qwen3.5-0.8b-eagle3     # B2
-    backend: vllm
+    backend: hf
     repo: Qwen/Qwen3.5-0.8B
     quant: int4
     eagle3: true                # speculative decode; budget a day of friction
     humaneval: true
-    note: "B0 + int4 + EAGLE-3, expected 3-6x vs B0; may need llama.cpp spec-decode"
+    note: "B0 + int4 + EAGLE-3, expected 3-6x vs B0; EAGLE-3 spec-decode NOT auto-wired (needs llama.cpp or vLLM), runs as plain int4 AR until wired"
 
   - id: lfm2.5-350m
-    backend: vllm
+    backend: hf
     repo: LiquidAI/LFM2.5-350M
     quant: null
     humaneval: true
