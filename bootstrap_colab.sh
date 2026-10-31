@@ -5,7 +5,7 @@
 set -euo pipefail
 
 echo "[1/4] installing deps on top of Colab's preinstalled torch (do NOT reinstall torch)..."
-pip install --quiet --no-cache-dir pyyaml datasets accelerate safetensors transformers bitsandbytes
+pip install --quiet --no-cache-dir pyyaml datasets accelerate safetensors transformers==4.51.3 bitsandbytes
 # sentencepiece is a dllm dep and often fails to build from source on Colab.
 pip install --quiet --no-cache-dir --prefer-binary sentencepiece || true
 # dLLM is only for the diffusion paradigm check; don't block AR if it fails.
