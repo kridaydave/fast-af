@@ -6,7 +6,7 @@ set -euo pipefail
 
 echo "[1/4] installing env (torch+torchvision cu121, dLLM)..."
 pip install --quiet --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
-pip install --quiet --no-cache-dir pyyaml datasets accelerate safetensors transformers
+pip install --quiet --no-cache-dir pyyaml datasets accelerate safetensors transformers bitsandbytes
 # dLLM is only for the diffusion paradigm check; don't block AR if it fails.
 pip install --quiet --no-cache-dir "git+https://github.com/ZHZisZZ/dllm.git" || echo "WARN: dLLM install failed; diffusion models will be skipped."
 
@@ -508,7 +508,14 @@ if __name__ == "__main__":
     main()
 BENCH_EOF_bench___main___py
 
-echo "[3/4] done. Harness is in bench/. Smoke-test one model:"
+echo "[3/4] harness written to bench/."
+echo "Smoke-test one AR model:"
 echo "    python -m bench --only smollm2-135m --out results.yaml"
-echo "[4/4] full roster:"
+echo "Full roster:"
 echo "    python -m bench --config bench/config.yaml --out results.yaml"
+echo "Set BENCH_RUN=smoke|full to auto-run after setup (default: none)."
+if [ "${BENCH_RUN:-none}" = "smoke" ]; then
+  python -m bench --only smollm2-135m --out results.yaml
+elif [ "${BENCH_RUN:-none}" = "full" ]; then
+  python -m bench --config bench/config.yaml --out results.yaml
+fi
