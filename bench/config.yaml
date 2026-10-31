@@ -1,0 +1,86 @@
+# Benchmark week roster for EdgeFast-Diff 1B (D1 = 100M).
+#
+# Every entry is one benchmark run. `backend` selects how the harness drives it:
+#   - vllm   : autoregressive, driven by vLLM (greedy decode, batch 1).
+#   - dllm   : masked/block diffusion via the dLLM framework (LLaDA, Dream, ...).
+#   - custom : a backend defined in bench/backends.py (e.g. smoldlm-144m).
+#
+# Timing contract (spec): batch 1, prompt_len in / out_len out, median of `runs`
+# timed generations, same GPU. TPS = generated_tokens / decode_seconds.
+# HumanEval pass@1 (n=1) is the quality guardrail and is tracked separately.
+
+common:
+  prompt_len: 1024      # tokens in
+  out_len: 1024         # tokens out
+  runs: 5               # median of N timed runs
+  batch: 1              # batch 1, one model per GPU (T4 has one usable)
+  seed: 0
+  dtype: float16        # T4 has no bf16; fp16 is the full tier
+  quant: null           # int4 only where noted (B1/B2)
+  humaneval: true       # track pass@1 for every AR model
+  warmup: 1             # discard this run before timing
+
+models:
+  # ---- AR baselines, ~100M band (D1's scale) ----
+  - id: smollm2-135m
+    backend: vllm
+    repo: HuggingFaceTB/SmolLM2-135M-Instruct
+    quant: null
+    humaneval: true
+    note: "135M AR, Apache-2.0, L1 yardstick"
+
+  - id: qwen3.5-0.8b            # B0
+    backend: vllm
+    repo: Qwen/Qwen3.5-0.8B
+    quant: null
+    humaneval: true
+    note: "GDN hybrid AR, same family as D1. B1/B2 build on this."
+
+  - id: qwen3.5-0.8b-int4       # B1
+    backend: vllm
+    repo: Qwen/Qwen3.5-0.8B
+    quant: int4                 # GPTQ int4 (T4 has no AWQ)
+    humaneval: true
+    note: "B0 + int4 QAT, expected ~2x vs B0"
+
+  - id: qwen3.5-0.8b-eagle3     # B2
+    backend: vllm
+    repo: Qwen/Qwen3.5-0.8B
+    quant: int4
+    eagle3: true                # speculative decode; budget a day of friction
+    humaneval: true
+    note: "B0 + int4 + EAGLE-3, expected 3-6x vs B0; may need llama.cpp spec-decode"
+
+  - id: lfm2.5-350m
+    backend: vllm
+    repo: LiquidAI/LFM2.5-350M
+    quant: null
+    humaneval: true
+    note: "354M hybrid AR, fast; latest small hybrid reference"
+
+  # ---- diffusion, size-matched to D1 ----
+  - id: smoldlm-144m
+    backend: custom
+    repo: HoangHa/smoldlm-144m
+    block_size: 32
+    steps: 8
+    confidence: 0.9
+    humaneval: false            # needs its own decode loop; see bench/backends.py
+    note: "144M block diffusion, block_size 32, Apache-2.0. D1's closest size-matched diffusion twin."
+
+  # ---- paradigm check at scale ----
+  - id: llada-8b-default
+    backend: dllm
+    repo: GSAI-ML/LLaDA-8B-Base
+    mode: default               # native masked diffusion
+    steps: 32
+    humaneval: false
+    note: "LLaDA-8B default config"
+
+  - id: llada-8b-fastdllm
+    backend: dllm
+    repo: GSAI-ML/LLaDA-8B-Base
+    mode: fast-dllm             # Fast-dLLM decoding policy
+    steps: 8
+    humaneval: false
+    note: "LLaDA-8B with Fast-dLLM decode; the tuned-policy comparison"

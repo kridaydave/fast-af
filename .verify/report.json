@@ -1,0 +1,37 @@
+{
+  "kind": "browser",
+  "url": "file:///home/kriday/Code/fast-af-boi/spec/edgefast-diff-1b.html",
+  "title": "EdgeFast-Diff 1B · spec v2",
+  "viewport": null,
+  "matrix": [
+    {
+      "viewport": "1440x900",
+      "scheme": "light"
+    }
+  ],
+  "dark": false,
+  "recordedAt": "2026-10-29T05:32:37.053Z",
+  "shots": [
+    {
+      "label": "main",
+      "cell": null,
+      "hash": "b88d8c72ec6e",
+      "path": "file-home-kriday-Code-fast-af-boi-spec-edgefast-diff-1b-html-20261029-053234-01-main.png",
+      "bytes": 1666564,
+      "width": 2880,
+      "height": 12020
+    }
+  ],
+  "video": null,
+  "gif": null,
+  "timings": null,
+  "determinism": null,
+  "baseline": null,
+  "budget": {
+    "total": 1666564,
+    "totalLabel": "1.6mb",
+    "overBudget": false,
+    "heavy": []
+  },
+  "issues": []
+}

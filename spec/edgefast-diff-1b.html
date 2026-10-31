@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EdgeFast-Diff 1B · spec v2</title>
+<style>
+/* ---------------------------------------------------------------------------
+   html-comms reference. Black and white, one amber accent, system fonts only.
+--------------------------------------------------------------------------- */
+
+:root {
+  --bg:        #000000;
+  --bg-raise:  #0d0d0d;
+  --bg-sink:   #080808;
+  --fg:        #f2f2f2;
+  --fg-mid:    #a8a8a8;
+  --fg-dim:    #6e6e6e;
+  --rule:      #242424;
+  --rule-firm: #3d3d3d;
+  --accent:    #e0a83c;
+  --accent-dim:#8a6a26;
+  --good:      #6fbf73;
+  --bad:       #e06c6c;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, "Times New Roman", serif;
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+
+  --gap: clamp(18px, 2.4vw, 28px);
+}
+
+html:has(#t-light:checked) {
+  --bg: #ffffff; --bg-raise: #f7f7f7; --bg-sink: #fbfbfb;
+  --fg: #0a0a0a; --fg-mid: #555555; --fg-dim: #8a8a8a;
+  --rule: #e2e2e2; --rule-firm: #c9c9c9;
+  --accent: #8a6410; --accent-dim: #c9a445;
+  --good: #2f7a34; --bad: #a83232;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.68 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--accent); color: #000; }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 clamp(18px, 4vw, 44px); }
+
+.kicker {
+  font: 500 11px/1.4 var(--mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 14px;
+}
+
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+h1 {
+  font: 600 clamp(34px, 5.6vw, 60px)/1.06 var(--serif);
+  letter-spacing: -.02em;
+  margin: 0 0 16px;
+  text-wrap: balance;
+}
+h1 em { font-style: italic; color: var(--accent); }
+
+.sub {
+  font: 400 clamp(17px, 2vw, 21px)/1.5 var(--serif);
+  color: var(--fg-mid);
+  max-width: 58ch;
+  margin: 0 0 26px;
+}
+
+h2 {
+  font: 600 clamp(24px, 3.4vw, 34px)/1.14 var(--serif);
+  letter-spacing: -.015em;
+  margin: 0 0 8px;
+}
+h3 {
+  font: 600 17px/1.35 var(--sans);
+  letter-spacing: -.01em;
+  margin: 0 0 6px;
+}
+p { margin: 0 0 14px; max-width: 68ch; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+
+code, .k {
+  font-family: var(--mono);
+  font-size: .88em;
+  background: var(--bg-raise);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: .1em .35em;
+  color: var(--fg);
+}
+pre {
+  font: 13px/1.6 var(--mono);
+  background: var(--bg-sink);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--accent-dim);
+  border-radius: 4px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0 0 16px;
+}
+pre code { background: none; border: 0; padding: 0; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 14px 0;
+  border-bottom: 1px solid var(--rule);
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .12em; text-transform: uppercase; color: var(--fg-dim);
+}
+.topbar .who { color: var(--fg-mid); }
+
+.masthead { padding: clamp(38px, 6vw, 74px) 0 clamp(26px, 3.4vw, 38px); }
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin: 0 0 26px;
+}
+.meta > div { background: var(--bg); padding: 12px 14px; }
+.meta dt {
+  font: 500 10px/1.3 var(--mono);
+  letter-spacing: .14em; text-transform: uppercase; color: var(--fg-dim);
+  margin: 0 0 5px;
+}
+.meta dd { margin: 0; font: 500 14px/1.3 var(--mono); color: var(--fg); }
+
+.lede { color: var(--fg-mid); max-width: 66ch; }
+
+.vh {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip-path: inset(50%); overflow: hidden; white-space: nowrap;
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--fg-mid);
+  background: var(--bg-raise);
+  border: 1px solid var(--rule-firm);
+  border-radius: 999px;
+  padding: 7px 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.btn:hover { color: var(--fg); border-color: var(--fg-dim); }
+.btn::before { content: "\25CF"; font-size: 8px; color: var(--fg-dim); }
+.vh:checked + .btn { color: #000; background: var(--accent); border-color: var(--accent); }
+.vh:checked + .btn::before { color: #000; }
+.vh:focus-visible + .btn { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+html:has(#t-light:checked) .when-dark { display: none; }
+html:has(#t-light:checked) .when-light { display: inline; }
+.when-light { display: none; }
+
+section { padding: clamp(30px, 4.4vw, 52px) 0; border-top: 1px solid var(--rule); }
+section:first-of-type { border-top: 0; padding-top: 0; }
+
+.sec-head { margin-bottom: 22px; }
+.sec-sub { color: var(--fg-mid); font: 400 16px/1.55 var(--serif); margin: 0; max-width: 62ch; }
+
+.table-scroll { overflow-x: auto; margin-bottom: 6px; }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 14.5px; }
+th {
+  font: 500 10.5px/1.3 var(--mono);
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--fg-mid);
+  text-align: left;
+  padding: 0 14px 9px 0;
+  border-bottom: 2px solid var(--rule-firm);
+  white-space: nowrap;
+}
+td {
+  padding: 11px 14px 11px 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--fg-mid);
+  vertical-align: top;
+}
+td:first-child { color: var(--fg); font-family: var(--mono); font-size: 13.5px; white-space: nowrap; }
+td .num { color: var(--fg); }
+
+.verdict { font: 500 10.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.verdict.y { color: var(--good); }
+.verdict.n { color: var(--bad); }
+.verdict.p { color: var(--fg-dim); }
+
+.pull {
+  margin: clamp(30px, 4vw, 46px) 0;
+  padding: 4px 0 4px 20px;
+  border-left: 2px solid var(--accent);
+  font: italic 400 clamp(18px, 2.3vw, 23px)/1.45 var(--serif);
+  color: var(--fg);
+  max-width: 40ch;
+}
+
+.notes { max-width: 72ch; }
+.notes h3 {
+  font: 600 12px/1.3 var(--mono);
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--fg-dim);
+  margin: 22px 0 9px;
+}
+.notes ul { margin: 0; padding-left: 18px; color: var(--fg-mid); font-size: 15px; }
+.notes ol { margin: 0; padding-left: 18px; color: var(--fg-mid); font-size: 15px; }
+.notes li { margin-bottom: 7px; }
+.notes li::marker { color: var(--accent-dim); }
+
+.callout {
+  background: var(--bg-raise);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  padding: 16px 18px;
+  margin: 0 0 18px;
+  font-size: 14.5px;
+  color: var(--fg-mid);
+}
+.callout strong { color: var(--fg); font-weight: 600; }
+
+footer {
+  padding: 26px 0 40px;
+  border-top: 1px solid var(--rule);
+  font: 400 12px/1.6 var(--mono);
+  color: var(--fg-dim);
+  display: flex; flex-wrap: wrap; gap: 6px 20px;
+}
+
+@media (max-width: 720px) {
+  .pull { max-width: none; }
+  .meta { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media print {
+  .topbar .btn { display: none; }
+  body { background: #fff; color: #000; }
+}
+</style>
+</head>
+<body>
+
+<input type="checkbox" id="t-light" class="vh">
+<div class="wrap">
+
+  <div class="topbar">
+    <span class="who">edgefast&#8209;diff&#8209;1b &middot; spec v2</span>
+    <label class="btn" for="t-light"><span class="when-dark">Light</span><span class="when-light">Dark</span></label>
+  </div>
+
+  <header class="masthead">
+    <p class="kicker">Technical spec &middot; draft &middot; 2026&#8209;10&#8209;28</p>
+    <h1>EdgeFast&#8209;Diff 1B &middot; a <em>block&#8209;diffusion</em> hybrid</h1>
+    <p class="sub">Maximum single&#8209;stream tokens per second from a 1B model, without shipping garbage.</p>
+
+    <dl class="meta">
+      <div><dt>Params</dt><dd>~1B</dd></div>
+      <div><dt>Blocks</dt><dd>24</dd></div>
+      <div><dt>Context</dt><dd>32k</dd></div>
+      <div><dt>Bench</dt><dd>2x T4</dd></div>
+    </dl>
+
+    <p class="lede">A 1B model with a mostly delta&#8209;rule backbone and block&#8209;diffusion decoding. It attacks speed from two directions: a per&#8209;pass read that does not grow, and several tokens revealed per pass. Quality is guarded by pass@1 on HumanEval, tracked at every step.</p>
+  </header>
+
+  <main>
+
+    <section>
+      <div class="sec-head">
+        <p class="kicker">Part I &middot; Goal</p>
+        <h2>What this is for</h2>
+        <p class="sec-sub">One target: the fastest single&#8209;stream output that still solves coding problems. Speed with garbage answers wins nothing.</p>
+      </div>
+
+      <div class="notes">
+        <div class="callout">
+          <strong>The governing formula.</strong> Speed comes from two levers: read less data per step, or emit more tokens per step. This spec pulls both.
+        </div>
+        <pre>TPS &#8776; bandwidth &#247; bytes read per forward pass &#215; tokens emitted per forward pass</pre>
+        <ul>
+          <li>Read less: a mostly delta&#8209;rule backbone with no growing KV cache.</li>
+          <li>Emit more: block&#8209;diffusion decoding reveals several tokens per pass.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <p class="kicker">Part II &middot; Baseline</p>
+        <h2>The scoreboard</h2>
+        <p class="sec-sub">Everything is measured against B0, a plain 1B model. Real runs happen on Kaggle's 2x T4. If D1 does not clearly beat B2, the project has no reason to exist.</p>
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Step</th>
+              <th>Config</th>
+              <th>Expected vs B0</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>B0</td>
+              <td>vanilla AR 1B</td>
+              <td>1x (reference)</td>
+              <td><span class="verdict p">Baseline</span></td>
+            </tr>
+            <tr>
+              <td>B1</td>
+              <td>B0 + int4 QAT</td>
+              <td>~2x</td>
+              <td><span class="verdict p">Off the shelf</span></td>
+            </tr>
+            <tr>
+              <td>B2</td>
+              <td>B0 + int4 + EAGLE&#8209;3</td>
+              <td>3&#8209;6x</td>
+              <td><span class="verdict y">The bar</span></td>
+            </tr>
+            <tr>
+              <td>D1</td>
+              <td>this spec</td>
+              <td>10x+ hoped</td>
+              <td><span class="verdict p">Unproven</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <p class="kicker">Part III &middot; Architecture</p>
+        <h2>How the model is built</h2>
+        <p class="sec-sub">Mostly cheap delta&#8209;rule layers, a few full&#8209;attention layers for recall, spread evenly. A 3:1 ratio, attention every 4th block.</p>
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Choice</th>
+              <th>Evidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Linear (18)</td>
+              <td>Gated DeltaNet (GDN)</td>
+              <td>Delta&#8209;rule layers win recall: GDN&#8209;2 &gt; GDN &gt; KDA &gt; Mamba&#8209;3 &gt; Mamba&#8209;2 at 1.3B (arXiv:2605.22791). GDN ships in Qwen3&#8209;Next; kernels exist.</td>
+            </tr>
+            <tr>
+              <td>Attention (6)</td>
+              <td>Full attention, GQA 4 KV heads, head dim 128, NoPE</td>
+              <td>3:1 ratio, uniformly interleaved at blocks 4, 8, 12, 16, 20, 24. Recall saturates at 3:1 (arXiv:2507.06457). Sliding window retracted: windowed hybrids degrade past the window (arXiv:2406.07887).</td>
+            </tr>
+            <tr>
+              <td>Placement</td>
+              <td>Uniform interleave</td>
+              <td>No ordering beats evenly dispersed.</td>
+            </tr>
+            <tr>
+              <td>FFN</td>
+              <td>SwiGLU, 8/3 expansion</td>
+              <td>Standard.</td>
+            </tr>
+            <tr>
+              <td>Norm</td>
+              <td>RMSNorm, pre&#8209;norm</td>
+              <td>Standard.</td>
+            </tr>
+            <tr>
+              <td>Vocab / emb</td>
+              <td>32k, tied</td>
+              <td>Small table at 1B.</td>
+            </tr>
+            <tr>
+              <td>Train context</td>
+              <td>32k</td>
+              <td>Mamba state unbounded at constant cost; attention caches the prompt once.</td>
+            </tr>
+            <tr>
+              <td>Precision</td>
+              <td>int4 QAT from the start</td>
+              <td>~0.5&#8209;2pt quality cost for ~2x bandwidth ceiling.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <p class="kicker">Part IV &middot; Decoding</p>
+        <h2>Block&#8209;diffusion decoding</h2>
+        <p class="sec-sub">Fill in a block of 32 masked slots over 8 to 16 steps, revealing 2&#8209;4 tokens per forward pass. Speed lives in the decode policy, not the architecture.</p>
+      </div>
+
+      <div class="notes">
+        <ul>
+          <li><strong>Block size 32.</strong> LLaDA and the fixed&#8209;state paper both converge on 32 masked slots.</li>
+          <li><strong>8&#8209;16 denoising steps.</strong> About 2&#8209;4 tokens revealed per pass. Not LLaDA's 512&#8209;step config, which is 1 token per pass and slower than AR.</li>
+          <li><strong>Unmasking.</strong> Parallel, confidence threshold 0.9 (Fast&#8209;dLLM style), not strict sequential ordering. The measured TPS wins live here.</li>
+          <li><strong>Prompt cache.</strong> Prompt encoded once and cached. Attention layers cross&#8209;attend the clean prefix; GDN layers carry a constant&#8209;size state across blocks. Training computes the prefix the same way inference does, so the cache is exact.</li>
+        </ul>
+        <div class="callout">
+          <strong>Back of envelope (H100).</strong> 1B int4 &#8776; 0.6 GB per pass, pass rate ~2,000&#8209;3,000, times ~3 tokens per pass. Paper math says 6&#8209;9k tok/s; expect about a third after overhead and remasking waste. The fixed&#8209;state paper measured 297 tok/s single&#8209;stream for a 3B pure&#8209;Mamba block&#8209;diffusion model at 256k context, 231 for the hybrid. That is the closest real datapoint.
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <p class="kicker">Part V &middot; Training recipe</p>
+        <h2>Three stages</h2>
+        <p class="sec-sub">Pretrain, distill, then fine&#8209;tune with reinforcement. Each stage has a budget and a known risk.</p>
+      </div>
+
+      <div class="notes">
+        <ol>
+          <li><strong>Pretrain ~500B tokens.</strong> Code&#8209;heavy mix (FineWeb&#8209;Edu + code + math), block&#8209;diffusion objective, block size 32, context 1024 then extend to 32k. The fixed&#8209;state 3B trained on 300B with acceptable quality, so 500B at 1B is plausible.</li>
+          <li><strong>Distill ~100B tokens.</strong> From a strong coder teacher (Qwen3&#8209;Coder class).</li>
+          <li><strong>SFT, then RLVR.</strong> Reward = tests pass. RL on diffusion likelihoods is immature (only LLaDA 1.5's VRPO and DiffuCoder's coupled&#8209;GRPO published). DiffuCoder also made the model tolerant of halved denoising steps, so RLVR buys competence and speed.</li>
+        </ol>
+        <div class="callout">
+          <strong>Budget note.</strong> No paid teacher. Open synthetic code datasets (Magicoder, Evol&#8209;Instruct&#8209;Code) for SFT; execution&#8209;feedback data (CodeFeedback) for reward signal. slime (THUDM) is the upgrade path for env&#8209;based RL if GPUs are rented later.
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <p class="kicker">Part VI &middot; Benchmark week</p>
+        <h2>Prove it before spending</h2>
+        <p class="sec-sub">Before any training, show the approach beats the competitor. If it does not, pivot early. Cheaper than training.</p>
+      </div>
+
+      <div class="notes">
+        <ol>
+          <li><strong>Reproduce B0, B1, B2</strong> on our hardware. These numbers are the whole scoreboard.</li>
+          <li><strong>Benchmark open diffusion models honestly.</strong> LLaDA&#8209;8B (default + Fast&#8209;dLLM decoding) and Dream 7B against Llama&#8209;3 8B / Qwen3 8B on identical hardware. No independent head&#8209;to&#8209;head exists anywhere. If diffusion cannot win after tuning, pivot to B2 + competence training.</li>
+          <li><strong>Optionally run the fixed&#8209;state authors' setup</strong> if code exists. Nearest proxy for D1.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <p class="kicker">Part VII &middot; Hardware reality</p>
+        <h2>What runs where</h2>
+        <p class="sec-sub">Benchmarks on Kaggle's 2x T4 (16 GB each, Turing, ~320 GB/s, no NVLink). Ratios carry over; absolute numbers do not.</p>
+      </div>
+
+      <div class="notes">
+        <ul>
+          <li><strong>No bf16, no AWQ.</strong> Full precision is fp16; quantized is GPTQ int4 or llama.cpp Q4_K_M. Turing misses Ampere+ attention kernels, so absolute TPS sits below the bandwidth math.</li>
+          <li><strong>One benchmark per GPU.</strong> Tensor parallelism across PCIe&#8209;linked T4s costs more than it gives at batch 1.</li>
+          <li><strong>8B models fit.</strong> Q4 is ~4.5&#8209;5 GB. LLaDA&#8209;8B via the diffuse&#8209;cpp GGUF fork. EAGLE&#8209;3 targets newer GPUs; B2 may need llama.cpp spec&#8209;decode or older vLLM. Budget a day of friction.</li>
+          <li><strong>Colab TPU excluded.</strong> The entire stack is CUDA. Porting decode loops to JAX/XLA to measure other people's models buys nothing.</li>
+          <li><strong>Strategic:</strong> this project is PyTorch/CUDA. Training compute comes from rented A100/H100 hours.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <p class="kicker">Part VIII &middot; Risks</p>
+        <h2>What could go wrong</h2>
+        <p class="sec-sub">Known failure modes and their mitigations. Written down so nothing is discovered the expensive way.</p>
+      </div>
+
+      <div class="notes">
+        <h3>Model risks</h3>
+        <ul>
+          <li><strong>Few&#8209;step quality cliff.</strong> Generative PPL degrades steeply below ~8 steps (15.3 at 4 steps vs 6.4 at 32). The 8&#8209;16 range is a bet, not a fact.</li>
+          <li><strong>Long&#8209;context recall.</strong> Fixed&#8209;state passkey scores weak at 16k for all mixers. The 3:1 ratio exists for this; watch it.</li>
+          <li><strong>Adaptive steps per block.</strong> More steps for hard code, fewer for boilerplate. No paper makes this the headline. Either a trap or our edge.</li>
+        </ul>
+        <h3>Data risks</h3>
+        <ul>
+          <li><strong>Benchmark contamination.</strong> HumanEval must stay out of all training data. Use MBPP or generated problems for reward; run n&#8209;gram overlap checks; touch HumanEval only at final eval.</li>
+          <li><strong>Code&#8209;biased pretrain.</strong> A code&#8209;heavy mix can spit code for "hello". Keep general text in the mix; rely on SFT for chat behavior; pilot run first.</li>
+        </ul>
+        <h3>Process risks</h3>
+        <ul>
+          <li><strong>First&#8209;time pretrainer.</strong> Pilot runs on small budgets first; understand each stage before running.</li>
+          <li><strong>Vibe&#8209;pretraining.</strong> Every run gets a written hypothesis, a metric, and a kill criterion before it starts. No blind runs on full budget.</li>
+          <li><strong>Diffusion RLVR immaturity.</strong> Could block competence. Fallback: distillation&#8209;only with a lower bar for v1.</li>
+          <li><strong>Diffusion + tool calling.</strong> v1 stays single&#8209;shot code RL: generate, sandbox runs it, reward from execution. Defer interactive RL to v2.</li>
+          <li><strong>Process gate.</strong> Kriday must understand every part before work continues. No stage proceeds until explained and agreed.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <p class="kicker">Part IX &middot; Deliverables</p>
+        <h2>What gets shipped</h2>
+      </div>
+
+      <div class="notes">
+        <ul>
+          <li>B0/B1/B2 benchmark harness and results (week 1)</li>
+          <li>Pretrained 1B checkpoint (GDN hybrid, block&#8209;diffusion objective)</li>
+          <li>Custom decode loop (confidence&#8209;threshold unmasking, prompt cache, block scheduler with tunable steps)</li>
+          <li>TPS + pass@1 report against B0/B1/B2</li>
+        </ul>
+      </div>
+    </section>
+
+    <blockquote class="pull">Speed with garbage answers wins nothing.</blockquote>
+
+  </main>
+
+  <footer>
+    <span>edgefast&#8209;diff&#8209;1b &middot; spec v2</span>
+    <span>Supersedes edgefast&#8209;1.5b.md</span>
+    <span>2026&#8209;10&#8209;28</span>
+  </footer>
+
+</div>
+</body>
+</html>
