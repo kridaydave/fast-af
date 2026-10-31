@@ -4,8 +4,8 @@
 # writes the harness, and (optionally) runs it.
 set -euo pipefail
 
-echo "[1/4] installing matching torch+torchvision (cu121) + transformers 5.x..."
-pip install --quiet --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
+echo "[1/4] installing torch 2.6.0 + torchvision 0.21.0 (cu124) + transformers 5.x..."
+pip install --quiet --no-cache-dir torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 pip install --quiet --no-cache-dir "transformers>=5.6.0,<6.0" pyyaml datasets accelerate safetensors bitsandbytes
 # sentencepiece is a dllm dep and often fails to build from source on Colab.
 pip install --quiet --no-cache-dir --prefer-binary sentencepiece || true
