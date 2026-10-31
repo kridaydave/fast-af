@@ -4,8 +4,9 @@
 # writes the harness, and (optionally) runs it.
 set -euo pipefail
 
-echo "[1/4] installing deps on top of Colab's preinstalled torch (do NOT reinstall torch)..."
-pip install --quiet --no-cache-dir pyyaml datasets accelerate safetensors transformers==4.51.3 bitsandbytes
+echo "[1/4] installing matching torch+torchvision (cu121) + transformers 5.x..."
+pip install --quiet --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
+pip install --quiet --no-cache-dir "transformers>=5.6.0,<6.0" pyyaml datasets accelerate safetensors bitsandbytes
 # sentencepiece is a dllm dep and often fails to build from source on Colab.
 pip install --quiet --no-cache-dir --prefer-binary sentencepiece || true
 # dLLM is only for the diffusion paradigm check; don't block AR if it fails.
