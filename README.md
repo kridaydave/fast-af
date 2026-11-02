@@ -1,4 +1,4 @@
-# EdgeFast-Diff 1B — benchmark week harness
+# EdgeFast-Diff 100M — benchmark week harness
 
 Measures TPS (tokens/s) and HumanEval pass@1 for the D1 roster on a free T4
 (batch 1, 1k in / 1k out, median of 5 timed runs). D1 is 100M; baselines are

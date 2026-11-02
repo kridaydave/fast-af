@@ -65,29 +65,42 @@ def run_model(m: dict, common: dict) -> dict:
     }
     if m.get("humaneval", common.get("humaneval", False)):
         print(f"[eval] HumanEval pass@1 for {m['id']}", flush=True)
-        result["humaneval"] = run_humaneval(
-            lambda p: backend.generate(p, 512).text,
-            prompts=50)
+        try:
+            result["humaneval"] = run_humaneval(
+                lambda p: backend.generate(p, 256).text,
+                prompts=50)
+        except Exception as e:  # speed result already in hand; don't discard it
+            result["humaneval"] = {"error": repr(e)}
+            print(f"[skip] humaneval for {m['id']}: {e}", flush=True)
     return result
 
 
-def run(config_path: str, output_path: str | None = None) -> list[dict]:
+def run(config_path: str, output_path: str | None = None,
+        models: list[dict] | None = None) -> list[dict]:
     import yaml
     cfg = yaml.safe_load(Path(config_path).read_text())
     common = cfg["common"]
+    if models is None:
+        models = cfg["models"]
     results = []
     t_start = time.perf_counter()
-    for m in cfg["models"]:
+
+    def _save():
+        # Write after EVERY model: a hard crash late in the roster (e.g. the
+        # 8B diffusion runs OOMing the process) must not lose earlier results.
+        if output_path:
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            out = {"elapsed_seconds": round(time.perf_counter() - t_start, 1),
+                   "common": common, "results": results}
+            Path(output_path).write_text(yaml.safe_dump(out, sort_keys=False))
+
+    for m in models:
         try:
             results.append(run_model(m, common))
         except Exception as e:  # keep going; record the failure
             results.append({"id": m["id"], "backend": m["backend"],
                             "error": repr(e)})
             print(f"[skip] {m['id']}: {e}", flush=True)
-    out = {"elapsed_seconds": round(time.perf_counter() - t_start, 1),
-           "common": common, "results": results}
-    if output_path:
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(output_path).write_text(yaml.safe_dump(out, sort_keys=False))
-        print(f"[done] wrote {output_path}", flush=True)
+        _save()
+    print(f"[done] wrote {output_path}", flush=True)
     return results

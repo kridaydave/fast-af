@@ -1,6 +1,6 @@
-# EdgeFast-Diff 1B — block-diffusion hybrid spec (v2)
+# EdgeFast-Diff 100M — block-diffusion hybrid spec (v3)
 
-Supersedes `edgefast-1.5b.md` (AR edge model, kept for reference). Written 2026-10-28 after the hybrid-attention and diffusion-decoding research passes.
+Revised 2026-11-01: target size retargeted from 1B to 100M (user call). With zero budget, the 100M is the real, trainable model — not just a pilot. A 1B scale-up stays future work if compute appears. Supersedes v2 of this spec (1B target) and `edgefast-1.5b.md` (AR edge model, kept for reference). Written 2026-10-28 after the hybrid-attention and diffusion-decoding research passes.
 
 ## Goal
 
@@ -14,11 +14,11 @@ The design attacks both terms: a mostly-delta-rule backbone shrinks the per-pass
 
 ## Baseline
 
-B0: Qwen3.5-0.8B (researched 2026-10-30: Qwen3.5 small series is 0.8B / 2B / 4B / 9B, no exact 1B; 0.8B is closest to ours. Re-pin if a closer size ships before benchmark week). fp16, vanilla decode, batch 1. Everything is measured against it: same GPU, batch 1, 1k in / 1k out, median of 5 runs. B1 (int4) and B2 (EAGLE-3) build on the same Qwen model, not on a separately trained baseline. Known caveat: D1 is 1B vs B0's 0.8B, so D1 carries a size handicap against itself in the TPS ratio; if D1 still wins, the win is understated, which is the honest direction to err in. No official code benchmarks exist for Qwen3.5-0.8B, so its HumanEval pass@1 is measured by us. Reference numbers in this doc are H100-scale; all actual benchmark runs happen on Kaggle's 2x T4 (see hardware section).
+B0: Qwen3.5-0.8B (researched 2026-10-30: Qwen3.5 small series is 0.8B / 2B / 4B / 9B; 0.8B is the closest small hybrid). fp16, vanilla decode, batch 1. Everything is measured against it: same GPU, batch 1, 1k in / 1k out, median of 5 runs. B1 (int4) and B2 (EAGLE-3) build on the same Qwen model, not on a separately trained baseline. Known caveat: D1 is 100M vs B0's 0.8B — 8x smaller, so a TPS win over B0 is expected from size alone and proves little by itself. The honest size-matched comparison is against SmolLM2-135M (see benchmark week); B0 is the "latest small hybrid" reference point. The real guardrail is quality: D1's pass@1 will be far below B0's, and the gap is tracked, not hidden. No official code benchmarks exist for Qwen3.5-0.8B, so its HumanEval pass@1 is measured by us. Reference numbers in this doc are H100-scale; all actual benchmark runs happen on Colab's free T4 (see hardware section).
 
 | Step | Config | Expected vs B0 |
 |---|---|---|
-| B0 | vanilla AR 1B | 1x (the reference) |
+| B0 | vanilla AR (Qwen3.5-0.8B fp16) | 1x (the reference) |
 | B1 | B0 + int4 QAT | ~2x |
 | B2 | B0 + int4 + EAGLE-3 | 3-6x, the honest off-the-shelf competitor |
 | D1 | this spec | 10x+ hoped |
@@ -27,18 +27,18 @@ If D1 doesn't clearly beat B2, there is no reason for it to exist.
 
 ## Architecture
 
-~1B params, 24 blocks, d_model 2048.
+~100M params, 16 blocks, d_model 640. Same shape family as the old 1B design, scaled down (was 24 blocks, d_model 2048). Verify the exact param count in code before locking the config.
 
 | Component | Choice | Evidence |
 |---|---|---|
-| Linear layers (18) | Gated DeltaNet (GDN) | Delta-rule layers win recall: GDN-2 > GDN > KDA > Mamba-3 > Mamba-2 at 1.3B (arXiv:2605.22791). GDN ships in Qwen3-Next, kernels exist. GDN-2 is the stretch option once it matures. |
-| Attention layers (6) | Full attention, GQA 4 KV heads, head dim 128, NoPE | 3:1 ratio, uniformly interleaved (attention at blocks 4, 8, 12, 16, 20, 24). Recall saturates at 3:1 (arXiv:2507.06457); Kimi Linear measured 3:1 best PPL. Full attention on sparse layers is what every shipped hybrid uses; sliding window retracted (Waleffe et al. found windowed hybrids degrade past the window, arXiv:2406.07887). |
+| Linear layers (12) | Gated DeltaNet (GDN) | Delta-rule layers win recall: GDN-2 > GDN > KDA > Mamba-3 > Mamba-2 at 1.3B (arXiv:2605.22791). GDN ships in Qwen3-Next, kernels exist. GDN-2 is the stretch option once it matures. |
+| Attention layers (4) | Full attention, GQA 2 KV heads, head dim 128, NoPE | 3:1 ratio, uniformly interleaved (attention at blocks 4, 8, 12, 16). Recall saturates at 3:1 (arXiv:2507.06457); Kimi Linear measured 3:1 best PPL. Full attention on sparse layers is what every shipped hybrid uses; sliding window retracted (Waleffe et al. found windowed hybrids degrade past the window, arXiv:2406.07887). 5 query heads at d_model 640, so 2 KV heads keeps GQA a real saving. |
 | Placement | Uniform interleave | Waleffe et al.: no ordering beats evenly dispersed. |
-| FFN | SwiGLU, 8/3 expansion | Standard. |
+| FFN | SwiGLU, 8/3 expansion (1728, 64-multiple) | Standard. |
 | Norm | RMSNorm, pre-norm | Standard. |
-| Vocab / embeddings | 32k, tied | Small table at 1B. |
+| Vocab / embeddings | 32k, tied | At 100M the table is a bigger share of the budget (~20M of ~105M); 32k tied keeps it affordable while covering code tokens. |
 | Train context | 32k | Mamba state is unbounded at constant cost; attention layers cache the prompt once. |
-| Precision | int4 QAT from the start | ~0.5-2pt quality cost for ~2x bandwidth ceiling. |
+| Precision | int4 QAT from the start | ~0.5-2pt quality cost for ~2x bandwidth ceiling. At 100M the quality cost of int4 hurts more than at 1B; if QAT degrades the pilot badly, fall back to fp16 and keep the speed win honest. |
 
 ## Decoding
 
@@ -53,13 +53,13 @@ Block-diffusion in the BD3-LM / fixed-state style (arXiv:2503.09573, arXiv:2609.
 - Few-round training: the model must be fine-tuned/distilled FOR the 4-8 round regime, not trained for many rounds then starved at decode time. Consistency-models-style: teach the model to land guesses early instead of hedging across rounds. Lives in training recipe step 2.
 - Prompt encoded once and cached. Attention layers cross-attend the cached clean prefix; GDN layers carry a constant-size recurrent state across blocks. Training computes the clean prefix the same way inference does, so the cache is exact, not approximated.
 
-Back-of-envelope on H100: 1B int4 ≈ 0.6 GB per pass, pass rate ~2,000-3,000, times ~3 tokens per pass. Paper math says 6-9k tok/s; expect a third of that after scheduling overhead and remasking waste. The fixed-state paper measured 297 tok/s single-stream for a 3B pure-Mamba block-diffusion model at 256k context, and 231 for the hybrid, which is the closest real datapoint to this design.
+Back-of-envelope on T4: 100M int4 ≈ 0.06 GB per pass, T4 bandwidth ~320 GB/s → ~5,000 passes/s ceiling, times ~3 tokens per pass ≈ 15k tok/s paper math; expect a third of that after scheduling overhead and remasking waste. The fixed-state paper measured 297 tok/s single-stream for a 3B pure-Mamba block-diffusion model at 256k context, and 231 for the hybrid — at 8x smaller with the same decode trick, meaningfully higher than both is the target.
 
 ## Training recipe (revised 2026-10-30: no budget, no teacher)
 
 User decisions on record: no paid teacher distillation (compute costs money), SFT stays, self-distillation after the base model replaces both teacher distillation and hard RLVR for v1.
 
-1. Pretrain ~200-500B tokens (code-heavy mix, FineWeb-Edu + code + math), block-diffusion objective, block size 32, context 1024 then extend to 32k. The fixed-state 3B trained on only 300B tokens with acceptable quality. Deferred until compute; the L1 pilot is the first-time pretrainer's education run. POLICY (user call, 2026-10-30): the first pretrain is boring by design, proven defaults only, no experimental knobs, no data experiments. All experiments live in L1 and the decode policy. The only question the big run answers is "does this scale."
+1. Pretrain ~2-10B tokens (code-heavy mix, FineWeb-Edu + code + math), block-diffusion objective, block size 32, context 1024 then extend. At 100M, a few billion tokens is the realistic free-tier budget (Kaggle T4, 30h/week); the fixed-state 3B trained on only 300B tokens with acceptable quality, so 100M on a few B tokens is not crazy. This IS the pretrain — there is no bigger run behind it. POLICY (user call, 2026-10-30): the pretrain is boring by design, proven defaults only, no experimental knobs, no data experiments. All experiments live in L1 and the decode policy. The only question the run answers is "does the recipe work at all."
 2. SFT on public instruction/code datasets (Magicoder / OSS-Instruct / Tulu class). These datasets are already teacher-distilled by their authors; we use the outputs without paying for the teacher. Few-round decode setting (4-8 rounds) applies here too. DATA HYGIENE (user call, 2026-10-30, "slop inheritance" worry): teacher-generated SFT data carries the teacher's tics (tool-call JSON, filler openers, emoji headers, agent-speak). Big models learn past the slop; a 100M model copies surface patterns, so it learns the slop AS the skill. Rules: small and clean over big and sloppy (LIMA lesson, target tens of millions of SFT tokens max); prefer sources seeded from real code over chat dumps; mechanically scrub tool-call traces, filler openers, and formatting slop before training; keep a general-chat slice in the mix; eval on non-code prompts during SFT.
 3. Self-distill (STaR / ReST style): model generates many solutions to generated problems, a sandbox runs the tests, only passing solutions become fine-tuning data, repeat. Tests are free judges. This is the v1 replacement for RLVR.
 4. RLVR (policy-gradient, tests as reward) stays a later-stage upgrade when compute exists. DiffuCoder's finding still on the table for that stage: RL post-training made the model tolerant of halved denoising steps, so RL buys competence AND speed.
@@ -68,7 +68,7 @@ Goodhart defense for the "test fixer" failure mode (model learns to pass tests w
 
 ## Benchmark week (before any training)
 
-D1 is 100M (not 1B). Baselines and contenders are size-matched to the 100M band where possible; larger "latest small" models are included with the size gap acknowledged (honest direction).
+D1 is 100M. Baselines and contenders are size-matched to the 100M band where possible; larger "latest small" models are included with the size gap acknowledged (honest direction).
 
 1. Reproduce AR baselines at ~100M: SmolLM2-135M (yardstick) and the latest small hybrid Qwen3.5-0.8B (GDN backbone, same family as D1) + LiquidAI LFM2.5-350M. B1 (int4 QAT) and B2 (int4 + EAGLE-3, budget a day of friction) build on the Qwen3.5-0.8B. No Qwen model exists near 100M; size gap is acknowledged.
 2. Size-matched diffusion vs AR at ~100M: HoangHa/smoldlm-144m (144M, block diffusion, block_size 32, Apache 2.0, latest) vs SmolLM2-135M. OpenSML/OpenSML-150M (150M, AR, Sep 2026) only if CUDA-portable (MLX by default). These numbers are the whole scoreboard for D1's own scale.
@@ -80,8 +80,8 @@ D1 is 100M (not 1B). Baselines and contenders are size-matched to the 100M band 
 Budget status (updated 2026-10-30): no training budget. Lightning AI's free GPU tier is gone. Everything runs on free tiers until credits or money appear.
 
 - Benchmarks run on Colab free T4 (16 GB, sm75, ~320 GB/s), chosen for ease of use. Identical silicon to Kaggle's T4, and the second T4 was never used (batch 1, one benchmark per GPU), so the original math is unchanged.
-- The 1B pretrain plan (rented H100, ~$1-1.5k at 200-300B tokens) is deferred, not cancelled. The speed thesis (TPS) is testable without scale; only pass@1 quality needs the full 500B-token run.
-- Zero-budget sequencing: benchmark week on Colab → 50-100M pilot of the same architecture (GDN hybrid, block diffusion, int4) trained free on Kaggle T4 (30h/week, checkpoints to Drive every N steps; Colab's short sessions make it bad for training) → with proof the physics works, apply for compute grants or rent for the 1B run.
+- The 100M pretrain is the plan now (Kaggle T4 free tier), not a rehearsal for one. A 1B run (rented H100, ~$1-1.5k at 200-300B tokens) stays future work if credits or grants appear. The speed thesis (TPS) is fully testable at 100M; only 1B-scale pass@1 quality needs the bigger run.
+- Zero-budget sequencing: benchmark week on Colab → pretrain D1 (100M, same architecture as specced) free on Kaggle T4 (30h/week, checkpoints to Drive every N steps; Colab's short sessions make it bad for training) → with proof the physics works, apply for compute grants or rent for the 1B scale-up.
 
 T4 consequences (unchanged):
 
@@ -121,9 +121,13 @@ Standard pilots rehearse a proven design at small scale. Ours can't: 100M models
 - No tool-calling integrated training. v1 does not train tool use at all. If the product later needs agents, that's a separate capability, not bolted onto this model.
 - Process gate. Kriday must understand every part of the puzzle before work continues. No week or stage proceeds until explained and agreed. If unclear, stop and explain in simple terms before acting.
 
+## Pretrain data (decided 2026-11-01)
+
+Three buckets, user-approved: general web = FineWeb-Edu (`sample-10BT` slice); code = The Stack Dedup, Python subset (mined); math = FineMath or OpenWebMath. Mix for the ~3-5B token run: ~50% code / ~35% web / ~15% math (web stays a third — the cure for code-biased pretrain). Decontamination (n-gram check vs HumanEval) runs inside the prep script on everything. SFT data (Magicoder class) is recipe step 2, separate from this. Tokenizer: train our own 32k BPE on a corpus sample (pending user confirm). Workflow: ~100MB samples locally to build/test the prep script, full downloads on Colab/Kaggle where training happens.
+
 ## Deliverables
 
 - B0/B1/B2 benchmark harness and results (week 1)
-- Pretrained 1B checkpoint (GDN hybrid, block-diffusion objective)
+- Pretrained 100M checkpoint (GDN hybrid, block-diffusion objective)
 - Custom decode loop (confidence-threshold unmasking, block-level early stop at 0.97, prompt cache, block overlap, block scheduler with tunable steps)
 - TPS + pass@1 report against B0/B1/B2

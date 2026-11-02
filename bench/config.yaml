@@ -1,4 +1,4 @@
-# Benchmark week roster for EdgeFast-Diff 1B (D1 = 100M).
+# Benchmark week roster for EdgeFast-Diff 100M (D1 = 100M).
 #
 # Every entry is one benchmark run. `backend` selects how the harness drives it:
 #   - vllm   : autoregressive, driven by vLLM (greedy decode, batch 1).

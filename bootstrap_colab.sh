@@ -1,22 +1,33 @@
 #!/usr/bin/env bash
-# EdgeFast-Diff 1B — benchmark week bootstrap for Colab free T4.
+# EdgeFast-Diff 100M — benchmark week bootstrap for Colab free T4.
 # Upload this file to Colab and run the whole cell: it installs the env,
 # writes the harness, and (optionally) runs it.
 set -euo pipefail
 
-echo "[1/4] installing torch 2.6.0 + torchvision 0.21.0 (cu124) + transformers 5.x..."
-pip install --quiet --no-cache-dir torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+echo "[1/4] installing torch 2.6.0 + torchvision 0.21.0 + torchaudio 2.6.0 (cu124) + transformers 5.x..."
+# torchaudio must match torch exactly: Colab preinstalls one built for a newer
+# torch, and loading its .so against 2.6.0 kills every transformers import
+# ("undefined symbol: aoti_torch_abi_version").
+pip install --quiet --no-cache-dir torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 pip install --quiet --no-cache-dir "transformers>=5.6.0,<6.0" pyyaml datasets accelerate safetensors bitsandbytes
-# sentencepiece is a dllm dep and often fails to build from source on Colab.
-pip install --quiet --no-cache-dir --prefer-binary sentencepiece || true
+# Qwen3.5's GDN layers need these or transformers falls back to slow reference
+# code — the B0 baseline must not be benchmarked without them.
+pip install --quiet --no-cache-dir flash-linear-attention || echo "WARN: flash-linear-attention failed; qwen3.5 GDN will run slow."
+# Compile only for the T4 (sm75) — otherwise nvcc builds for 12 GPU
+# architectures and the install takes ~10x longer.
+TORCH_CUDA_ARCH_LIST="7.5" pip install --quiet --no-cache-dir causal-conv1d > /tmp/causal_conv1d_install.log 2>&1 || echo "WARN: causal-conv1d failed (source build); qwen3.5 conv will run slow. Log: /tmp/causal_conv1d_install.log"
 # dLLM is only for the diffusion paradigm check; don't block AR if it fails.
-pip install --quiet --no-cache-dir "git+https://github.com/ZHZisZZ/dllm.git" || echo "WARN: dLLM install failed; diffusion models will be skipped."
+# dllm hard-pins transformers==4.57.0, so install with --no-deps + its light
+# runtime deps — never let pip downgrade the transformers 5.x above.
+pip install --quiet --no-cache-dir --no-deps "git+https://github.com/ZHZisZZ/dllm.git" > /tmp/dllm_install.log 2>&1 \
+  && pip install --quiet --no-cache-dir --prefer-binary sentencepiece tyro omegaconf rich torchmetrics tqdm \
+  || echo "WARN: dLLM install failed; diffusion models will be skipped. Install log: /tmp/dllm_install.log"
 python -c "import torch; assert torch.cuda.is_available(), 'NO GPU — switch Runtime to T4'; print('torch', torch.__version__, '| CUDA ok |', torch.cuda.get_device_name(0))"
 
 echo "[2/4] writing harness..."
 mkdir -p bench
 cat > bench/config.yaml <<'BENCH_EOF_bench_config_yaml'
-# Benchmark week roster for EdgeFast-Diff 1B (D1 = 100M).
+# Benchmark week roster for EdgeFast-Diff 100M (D1 = 100M).
 #
 # Every entry is one benchmark run. `backend` selects how the harness drives it:
 #   - vllm   : autoregressive, driven by vLLM (greedy decode, batch 1).
@@ -316,57 +327,49 @@ from typing import Any
 
 from datasets import load_dataset
 
-# Canonical HumanEval, deduped to the standard 164.
-_URL = "https://raw.githubusercontent.com/openai/human-eval/master/data/HumanEval.jsonl"
+# Canonical HumanEval. The raw file on openai/human-eval is GZIP'd (.jsonl.gz);
+# the plain .jsonl path was deleted and 404s.
+_URL = "https://raw.githubusercontent.com/openai/human-eval/master/data/HumanEval.jsonl.gz"
 
 
 def _load(prompts: int) -> list[dict[str, Any]]:
     rows = []
     try:
-        ds = load_dataset("openai_humaneval", split="test")
+        # The dataset moved out of the top-level namespace; datasets does not
+        # reliably follow the 307, so query the new location directly.
+        ds = load_dataset("openai/openai_humaneval", split="test")
         rows = list(ds)
     except Exception:
-        # Fallback: fetch raw jsonl directly.
+        # Fallback: fetch the raw gzipped jsonl directly.
+        import gzip
         import urllib.request
         with urllib.request.urlopen(_URL) as r:
-            rows = [json.loads(line) for line in r if line.strip()]
+            rows = [json.loads(line) for line in gzip.decompress(r.read())
+                    .decode("utf-8").splitlines() if line.strip()]
     return [r for r in rows[:prompts]]
 
 
 def _extract(completion: str, prompt: str) -> str:
-    """Strip to the function body the prompt defines, up to the next def/EOF."""
-    body = completion
-    # Keep only code after the prompt, before any trailing new top-level def.
-    if prompt and prompt in body:
-        body = body.split(prompt, 1)[1]
-    body = "def " + body if not body.lstrip().startswith(("def", "class", "@")) else body
-    # cut at the next top-level function/class definition
-    cut = re.split(r"\n(?:def|class)\s", "\n" + body.lstrip("\n"))
-    return cut[0].strip()
+    """Completion is the continuation of prompt; if the model repeated the
+    prompt verbatim, strip down to the part after it. No other surgery —
+    prepending 'def ' or cutting at the next def corrupted valid bodies."""
+    if prompt and prompt.strip() in completion:
+        return completion.split(prompt, 1)[1]
+    return completion
 
 
-def _run(prompt: str, completion: str) -> bool:
+def _run(prompt: str, completion: str, tests: str, entry_point: str) -> bool:
+    """Canonical HumanEval check: exec prompt+completion, then the dataset's
+    test suite via check(entry_point). The prompt docstring's >>> examples
+    are NOT tests — judging those made every parseable completion pass."""
     try:
         exec_globals: dict[str, Any] = {}
-        code = prompt + "\n" + _extract(completion, prompt) + "\n"
+        code = (prompt + "\n" + _extract(completion, prompt) + "\n"
+                + tests + "\ncheck(" + entry_point + ")\n")
         exec(compile(code, "<eval>", "exec"), exec_globals)  # noqa: S102
-        # run the assertions embedded in the prompt's docstring test block
-        test = _extract_tests(prompt)
-        if test:
-            exec(compile(test, "<test>", "exec"), exec_globals)
         return True
     except Exception:
         return False
-
-
-def _extract_tests(prompt: str) -> str:
-    # HumanEval prompts embed checks() in the docstring; run them.
-    m = re.search(r'"""(.*?)"""', prompt, re.DOTALL)
-    if not m:
-        return ""
-    doc = m.group(1)
-    mm = re.search(r"check\(.*?\)\n(.*?)(\ncheck\()", doc, re.DOTALL)
-    return mm.group(1) if mm else ""
 
 
 def run_humaneval(gen_fn, prompts: int = 50) -> dict[str, Any]:
@@ -379,7 +382,8 @@ def run_humaneval(gen_fn, prompts: int = 50) -> dict[str, Any]:
             completion = gen_fn(prompt)
         except Exception:
             completion = ""
-        if _run(prompt, completion):
+        if _run(prompt, completion, r.get("test", ""),
+                r.get("entry_point", "")):
             passed += 1
     n = len(rows)
     return {"n": n, "passed": passed, "pass@1": passed / n if n else 0.0}
@@ -452,35 +456,48 @@ def run_model(m: dict, common: dict) -> dict:
     }
     if m.get("humaneval", common.get("humaneval", False)):
         print(f"[eval] HumanEval pass@1 for {m['id']}", flush=True)
-        result["humaneval"] = run_humaneval(
-            lambda p: backend.generate(p, 512).text,
-            prompts=50)
+        try:
+            result["humaneval"] = run_humaneval(
+                lambda p: backend.generate(p, 256).text,
+                prompts=50)
+        except Exception as e:  # speed result already in hand; don't discard it
+            result["humaneval"] = {"error": repr(e)}
+            print(f"[skip] humaneval for {m['id']}: {e}", flush=True)
     return result
 
 
-def run(config_path: str, output_path: str | None = None) -> list[dict]:
+def run(config_path: str, output_path: str | None = None,
+        models: list[dict] | None = None) -> list[dict]:
     import yaml
     cfg = yaml.safe_load(Path(config_path).read_text())
     common = cfg["common"]
+    if models is None:
+        models = cfg["models"]
     results = []
     t_start = time.perf_counter()
-    for m in cfg["models"]:
+
+    def _save():
+        # Write after EVERY model: a hard crash late in the roster (e.g. the
+        # 8B diffusion runs OOMing the process) must not lose earlier results.
+        if output_path:
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            out = {"elapsed_seconds": round(time.perf_counter() - t_start, 1),
+                   "common": common, "results": results}
+            Path(output_path).write_text(yaml.safe_dump(out, sort_keys=False))
+
+    for m in models:
         try:
             results.append(run_model(m, common))
         except Exception as e:  # keep going; record the failure
             results.append({"id": m["id"], "backend": m["backend"],
                             "error": repr(e)})
             print(f"[skip] {m['id']}: {e}", flush=True)
-    out = {"elapsed_seconds": round(time.perf_counter() - t_start, 1),
-           "common": common, "results": results}
-    if output_path:
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(output_path).write_text(yaml.safe_dump(out, sort_keys=False))
-        print(f"[done] wrote {output_path}", flush=True)
+        _save()
+    print(f"[done] wrote {output_path}", flush=True)
     return results
 BENCH_EOF_bench_run_py
 cat > bench/__init__.py <<'BENCH_EOF_bench___init___py'
-"""EdgeFast-Diff 1B benchmark week harness."""
+"""EdgeFast-Diff 100M benchmark week harness."""
 from .run import run, run_model
 
 __all__ = ["run", "run_model"]
@@ -493,18 +510,19 @@ from .run import run
 
 
 def main():
-    ap = argparse.ArgumentParser(description="EdgeFast-Diff 1B benchmark week")
+    ap = argparse.ArgumentParser(description="EdgeFast-Diff 100M benchmark week")
     ap.add_argument("--config", default="bench/config.yaml")
     ap.add_argument("--out", default="results.yaml")
     ap.add_argument("--only", help="comma-separated model ids to run")
     args = ap.parse_args()
 
     cfg = __import__("yaml").safe_load(open(args.config).read())
+    models = None
     if args.only:
         want = {x.strip() for x in args.only.split(",")}
-        cfg["models"] = [m for m in cfg["models"] if m["id"] in want]
+        models = [m for m in cfg["models"] if m["id"] in want]
 
-    run(args.config, args.out)
+    run(args.config, args.out, models=models)
 
 
 if __name__ == "__main__":
