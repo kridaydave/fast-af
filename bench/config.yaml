@@ -65,7 +65,7 @@ models:
     block_size: 32
     steps: 8
     confidence: 0.9
-    humaneval: false            # needs its own decode loop; see bench/backends.py
+    humaneval: false            # diffusion row is speed-only; HumanEval stays AR-only (spec)
     note: "144M block diffusion, block_size 32, Apache-2.0. D1's closest size-matched diffusion twin."
 
   # ---- paradigm check at scale ----

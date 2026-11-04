@@ -5,7 +5,8 @@ import statistics
 import time
 from pathlib import Path
 
-from .backends import TransformersBackend, DllmBackend, CustomBackend, Generation
+from .backends import (TransformersBackend, DllmBackend, Generation,
+                       load_smoldlm)
 from .humaneval import run_humaneval
 
 # Prompts for the speed harness: coding-style, batch 1, out_len tokens each.
@@ -25,9 +26,11 @@ def _build_backend(m: dict, common: dict):
         return DllmBackend(m["repo"], m.get("mode", "default"),
                            m.get("steps", 8), common["dtype"])
     if b == "custom":
-        raise NotImplementedError(
-            "custom backend (smoldlm-144m): wire score_fn + tokenizer from "
-            "the smoldlm repo in bench/backends.py before running.")
+        # only custom model in the roster today; a second one gets its own loader
+        return load_smoldlm(m["repo"], block_size=m["block_size"],
+                            steps=m.get("steps", 8),
+                            confidence=m.get("confidence", 0.9),
+                            dtype=common["dtype"])
     raise ValueError(f"unknown backend: {b}")
 
 

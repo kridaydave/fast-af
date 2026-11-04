@@ -94,7 +94,7 @@ models:
     block_size: 32
     steps: 8
     confidence: 0.9
-    humaneval: false            # needs its own decode loop; see bench/backends.py
+    humaneval: false            # diffusion row is speed-only; HumanEval stays AR-only (spec)
     note: "144M block diffusion, block_size 32, Apache-2.0. D1's closest size-matched diffusion twin."
 
   # ---- paradigm check at scale ----
@@ -242,73 +242,125 @@ class DllmBackend:
 class CustomBackend:
     """Generic block-diffusion decode loop for models without a dLLM class.
 
-    D1's own decode policy is prototyped here: block_size masked slots, N
-    denoising passes, confidence-threshold unmasking (0.9 per token), block
-    overlap, and a block-level early stop at 0.97. This is the honest place to
-    benchmark smoldlm-144m and to rehearse D1's loop before the real model.
+    The benchmark-week prototype of D1's decode policy: fill `block_size`
+    slots with mask tokens, run up to `steps` denoising passes over
+    prefix+block, and each pass unmask every open slot whose best prediction
+    clears `confidence`. The last pass always fills whatever is still open,
+    so a committed block never contains mask tokens. EOS truncates the block
+    the way an AR stop would.
 
-    Requires a model that scores masked positions (masked-token logits). The
-    model must expose `score_masked(input_ids) -> logits` or be wrapped to do
-    so. Verify the smoldlm repo's API and wire `score_fn` accordingly.
+    score_fn(seq) -> logits (1, L, V) must pin mask/pad logits to -inf so
+    argmax can never pick a mask slot; load_smoldlm() wires this. The D1
+    knobs from the spec (0.97 block early stop, prompt cache, block overlap)
+    belong to the real model's loop, not this prototype.
+
+    tokenizer is a `tokenizers.Tokenizer` (encode().ids / decode()).
     """
 
     MASK_ID = 0  # smoldlm config: mask_token_id = 0
 
-    def __init__(self, repo: str, block_size: int, steps: int,
+    def __init__(self, block_size: int, steps: int,
                  confidence: float, score_fn: Callable, tokenizer,
-                 eos_id: int = 1, max_new_tokens: int = 1024):
-        self.repo = repo
+                 eos_id: int = 1):
+        if steps < 1:
+            raise ValueError(f"steps must be >= 1, got {steps}")
         self.block_size = block_size
         self.steps = steps
         self.confidence = confidence
         self.score_fn = score_fn
         self.tokenizer = tokenizer
         self.eos_id = eos_id
-        self.max_new_tokens = max_new_tokens
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def warmup(self) -> None:
         self.generate("the quick brown fox", 8)
 
     def generate(self, prompt: str, out_len: int) -> Generation:
-        import torch
-        enc = self.tokenizer(prompt, return_tensors="pt").to("cuda")
-        prefix = enc["input_ids"][0]
+        prefix = self.tokenizer.encode(prompt).ids
+        out_ids = list(prefix)
         t0 = time.perf_counter()
 
-        out_ids = list(prefix.tolist())
-        revealed = 0
-        while revealed < out_len:
+        emitted = 0
+        while emitted < out_len:
             block = [self.MASK_ID] * self.block_size
-            seq = torch.tensor([out_ids + block], device="cuda")
-            prev_conf = 0.0
-            for _ in range(self.steps):
+            seq = torch.tensor([out_ids + block], device=self.device)
+            for step in range(self.steps):
+                open_slots = [i for i, t in enumerate(block)
+                              if t == self.MASK_ID]
+                if not open_slots:
+                    break
                 logits = self.score_fn(seq)            # (1, L, V)
                 probs = torch.softmax(logits[0, -self.block_size:], dim=-1)
                 conf, tok = probs.max(dim=-1)          # per-slot (block,)
                 conf = conf.float().cpu()
-                if prev_conf > 0.97:                    # block-level early stop
-                    break
-                prev_conf = conf.min().item()
-                conf_mask = conf >= self.confidence
-                if conf_mask.all():
-                    break
-                chosen = tok[conf_mask].tolist()
-                for i, c in enumerate(conf_mask.tolist()):
-                    if c:
-                        block[i] = chosen.pop(0)
-                seq = torch.tensor([out_ids + block], device="cuda")
-            # commit block
-            new = block
-            out_ids.extend(new)
-            revealed += self.block_size
-            if self.eos_id in new:
+                fill = (open_slots if step == self.steps - 1
+                        else [i for i in open_slots
+                              if conf[i] >= self.confidence])
+                if not fill:
+                    # threshold cleared nothing: commit the single most
+                    # confident slot so every pass makes progress instead
+                    # of re-scoring an identical block
+                    fill = [max(open_slots, key=lambda i: float(conf[i]))]
+                for i in fill:
+                    if int(tok[i]) == self.MASK_ID:
+                        raise RuntimeError(
+                            "score_fn let the mask id win argmax at an open "
+                            "slot; pin mask/pad logits to -inf")
+                    block[i] = int(tok[i])
+                seq = torch.tensor([out_ids + block], device=self.device)
+            if self.eos_id in block:
+                block = block[:block.index(self.eos_id)]
+                out_ids.extend(block)
+                emitted += len(block)
                 break
+            out_ids.extend(block)
+            emitted += len(block)
 
         decode_s = time.perf_counter() - t0
         text = self.tokenizer.decode(out_ids[len(prefix):],
                                      skip_special_tokens=True)
-        return Generation(text=text, num_tokens=revealed,
+        return Generation(text=text, num_tokens=max(emitted, 1),
                           decode_seconds=max(decode_s, 1e-6))
+
+
+def load_smoldlm(repo: str, block_size: int, steps: int, confidence: float,
+                 dtype: str) -> CustomBackend:
+    """Wire CustomBackend to HoangHa/smoldlm-144m.
+
+    The repo ships `modeling_smoldlm.py` as a standalone module (not a
+    transformers AutoModel), so fetch it from the repo and import it
+    directly. score_fn mirrors the repo's own generate(): forward pass with
+    mask/pad logits pinned to -inf.
+    """
+    import importlib.util
+
+    from huggingface_hub import hf_hub_download
+    from tokenizers import Tokenizer
+
+    mod_path = hf_hub_download(repo, "modeling_smoldlm.py")
+    spec = importlib.util.spec_from_file_location("modeling_smoldlm", mod_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    model = mod.SmolDLM.from_pretrained(repo)
+    if dtype == "float16":
+        model = model.half()  # match the AR tier's fp16 full-precision run
+
+    def score_fn(seq):
+        with torch.no_grad():
+            logits = model(seq)
+        logits[:, :, model.mask_token_id] = -float("inf")
+        logits[:, :, model.pad_token_id] = -float("inf")
+        return logits
+
+    backend = CustomBackend(
+        block_size=block_size, steps=steps, confidence=confidence,
+        score_fn=score_fn,
+        tokenizer=Tokenizer.from_file(model._tokenizer_path),
+        eos_id=model.eos_token_id)
+    # generate() builds seq on backend.device; without this move a CUDA box
+    # (Colab T4) would feed CPU weights a CUDA tensor
+    model.to(backend.device)
+    return backend
 BENCH_EOF_bench_backends_py
 cat > bench/humaneval.py <<'BENCH_EOF_bench_humaneval_py'
 """HumanEval pass@1 guardrail (n=1, exec-based).
@@ -396,7 +448,8 @@ import statistics
 import time
 from pathlib import Path
 
-from .backends import TransformersBackend, DllmBackend, CustomBackend, Generation
+from .backends import (TransformersBackend, DllmBackend, Generation,
+                       load_smoldlm)
 from .humaneval import run_humaneval
 
 # Prompts for the speed harness: coding-style, batch 1, out_len tokens each.
@@ -416,9 +469,11 @@ def _build_backend(m: dict, common: dict):
         return DllmBackend(m["repo"], m.get("mode", "default"),
                            m.get("steps", 8), common["dtype"])
     if b == "custom":
-        raise NotImplementedError(
-            "custom backend (smoldlm-144m): wire score_fn + tokenizer from "
-            "the smoldlm repo in bench/backends.py before running.")
+        # only custom model in the roster today; a second one gets its own loader
+        return load_smoldlm(m["repo"], block_size=m["block_size"],
+                            steps=m.get("steps", 8),
+                            confidence=m.get("confidence", 0.9),
+                            dtype=common["dtype"])
     raise ValueError(f"unknown backend: {b}")
 
 
