@@ -39,7 +39,7 @@ cat > bench/config.yaml <<'BENCH_EOF_bench_config_yaml'
 # HumanEval pass@1 (n=1) is the quality guardrail and is tracked separately.
 
 common:
-  prompt_len: 1024      # tokens in
+  prompt_len: 1024      # tokens in — enforced by fit_prompt() in run.py
   out_len: 1024         # tokens out
   runs: 5               # median of N timed runs
   batch: 1              # batch 1, one model per GPU (T4 has one usable)
@@ -98,6 +98,10 @@ models:
     note: "144M block diffusion, block_size 32, Apache-2.0. D1's closest size-matched diffusion twin."
 
   # ---- paradigm check at scale ----
+  # 8B rows run LAST (user call 2026-11-04): an OOM crash kills the process,
+  # and every row above is already saved by then (run.py writes results after
+  # each model). The LLaDA 4-bit path is deferred until the end of benchmarking.
+
   - id: llada-8b-default
     backend: dllm
     repo: GSAI-ML/LLaDA-8B-Base
@@ -460,6 +464,37 @@ _SPEED_PROMPTS = [
 ]
 
 
+def _encode_ids(tokenizer, text: str) -> list[int]:
+    # HF tokenizers return list[int]; tokenizers.Tokenizer returns an Encoding
+    ids = tokenizer.encode(text)
+    return ids if isinstance(ids, list) else ids.ids
+
+
+def fit_prompt(prompts: list[str], tokenizer, target: int) -> tuple[str, int]:
+    """Build a prompt of exactly `target` tokens by cycling the base prompts.
+
+    The spec's timing contract is 1k in / 1k out (spec, Baseline section);
+    the harness used to ignore prompt_len and time ~60-token prompts, which
+    flatters diffusion: AR reads the prefix once and caches it, while the
+    diffusion loop re-reads the whole prefix on every denoising pass, so a
+    short prompt hides that cost entirely.
+    """
+    blob = "\n\n".join(prompts)
+    ids: list[int] = []
+    while len(ids) < target:
+        ids += _encode_ids(tokenizer, blob)
+    ids = ids[:target]
+    text = tokenizer.decode(ids)
+    for _ in range(3):
+        # decode -> encode can drift a token or two at the cut; converge
+        real = _encode_ids(tokenizer, text)
+        if len(real) == target:
+            break
+        ids = (real + ids)[:target] if len(real) < target else real[:target]
+        text = tokenizer.decode(ids)
+    return text, len(_encode_ids(tokenizer, text))
+
+
 def _build_backend(m: dict, common: dict):
     b = m["backend"]
     if b in ("vllm", "hf"):
@@ -500,8 +535,23 @@ def run_model(m: dict, common: dict) -> dict:
     print(f"[run] {m['id']} ({m['backend']})", flush=True)
     backend = _build_backend(m, common)
     backend.warmup()
-    prompt = _SPEED_PROMPTS[0]
+    tokenizer = getattr(backend, "tokenizer", None)
+    if tokenizer is None:
+        # DllmBackend loads its tokenizer with the model; dllm's API cannot
+        # be verified off-T4, so probe for it and degrade honestly
+        tokenizer = getattr(getattr(backend, "_model", None), "tokenizer",
+                            None)
+    if tokenizer is not None:
+        prompt, n_in = fit_prompt(_SPEED_PROMPTS, tokenizer,
+                                  common["prompt_len"])
+        print(f"[prompt] {m['id']}: {n_in} tokens in "
+              f"(target {common['prompt_len']})", flush=True)
+    else:
+        prompt, n_in = "\n\n".join(_SPEED_PROMPTS), None
+        print(f"[warn] {m['id']}: no tokenizer exposed; prompt_len "
+              f"{common['prompt_len']} not enforced", flush=True)
     speed = _timed_gen(backend, prompt, common["out_len"], common["runs"])
+    speed["prompt_tokens"] = n_in
     result: dict = {
         "id": m["id"],
         "backend": m["backend"],

@@ -17,6 +17,37 @@ _SPEED_PROMPTS = [
 ]
 
 
+def _encode_ids(tokenizer, text: str) -> list[int]:
+    # HF tokenizers return list[int]; tokenizers.Tokenizer returns an Encoding
+    ids = tokenizer.encode(text)
+    return ids if isinstance(ids, list) else ids.ids
+
+
+def fit_prompt(prompts: list[str], tokenizer, target: int) -> tuple[str, int]:
+    """Build a prompt of exactly `target` tokens by cycling the base prompts.
+
+    The spec's timing contract is 1k in / 1k out (spec, Baseline section);
+    the harness used to ignore prompt_len and time ~60-token prompts, which
+    flatters diffusion: AR reads the prefix once and caches it, while the
+    diffusion loop re-reads the whole prefix on every denoising pass, so a
+    short prompt hides that cost entirely.
+    """
+    blob = "\n\n".join(prompts)
+    ids: list[int] = []
+    while len(ids) < target:
+        ids += _encode_ids(tokenizer, blob)
+    ids = ids[:target]
+    text = tokenizer.decode(ids)
+    for _ in range(3):
+        # decode -> encode can drift a token or two at the cut; converge
+        real = _encode_ids(tokenizer, text)
+        if len(real) == target:
+            break
+        ids = (real + ids)[:target] if len(real) < target else real[:target]
+        text = tokenizer.decode(ids)
+    return text, len(_encode_ids(tokenizer, text))
+
+
 def _build_backend(m: dict, common: dict):
     b = m["backend"]
     if b in ("vllm", "hf"):
@@ -57,8 +88,23 @@ def run_model(m: dict, common: dict) -> dict:
     print(f"[run] {m['id']} ({m['backend']})", flush=True)
     backend = _build_backend(m, common)
     backend.warmup()
-    prompt = _SPEED_PROMPTS[0]
+    tokenizer = getattr(backend, "tokenizer", None)
+    if tokenizer is None:
+        # DllmBackend loads its tokenizer with the model; dllm's API cannot
+        # be verified off-T4, so probe for it and degrade honestly
+        tokenizer = getattr(getattr(backend, "_model", None), "tokenizer",
+                            None)
+    if tokenizer is not None:
+        prompt, n_in = fit_prompt(_SPEED_PROMPTS, tokenizer,
+                                  common["prompt_len"])
+        print(f"[prompt] {m['id']}: {n_in} tokens in "
+              f"(target {common['prompt_len']})", flush=True)
+    else:
+        prompt, n_in = "\n\n".join(_SPEED_PROMPTS), None
+        print(f"[warn] {m['id']}: no tokenizer exposed; prompt_len "
+              f"{common['prompt_len']} not enforced", flush=True)
     speed = _timed_gen(backend, prompt, common["out_len"], common["runs"])
+    speed["prompt_tokens"] = n_in
     result: dict = {
         "id": m["id"],
         "backend": m["backend"],

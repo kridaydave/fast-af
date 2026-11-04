@@ -10,7 +10,7 @@
 # HumanEval pass@1 (n=1) is the quality guardrail and is tracked separately.
 
 common:
-  prompt_len: 1024      # tokens in
+  prompt_len: 1024      # tokens in — enforced by fit_prompt() in run.py
   out_len: 1024         # tokens out
   runs: 5               # median of N timed runs
   batch: 1              # batch 1, one model per GPU (T4 has one usable)
@@ -69,6 +69,10 @@ models:
     note: "144M block diffusion, block_size 32, Apache-2.0. D1's closest size-matched diffusion twin."
 
   # ---- paradigm check at scale ----
+  # 8B rows run LAST (user call 2026-11-04): an OOM crash kills the process,
+  # and every row above is already saved by then (run.py writes results after
+  # each model). The LLaDA 4-bit path is deferred until the end of benchmarking.
+
   - id: llada-8b-default
     backend: dllm
     repo: GSAI-ML/LLaDA-8B-Base
