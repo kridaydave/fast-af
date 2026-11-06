@@ -47,11 +47,14 @@ class TransformersBackend:
         import torch
         from transformers import (AutoModelForCausalLM, AutoTokenizer,
                                   BitsAndBytesConfig)
-        self.device = "cuda"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         torch_dtype = torch.float16 if dtype == "float16" else torch.float32
-        kw: dict[str, Any] = dict(torch_dtype=torch_dtype, device_map="cuda",
+        kw: dict[str, Any] = dict(torch_dtype=torch_dtype,
+                                  device_map=self.device,
                                   trust_remote_code=True)
         if quant == "int4":
+            if self.device != "cuda":
+                raise ValueError("int4 quantization requires CUDA; run B1/B2 on T4")
             kw["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
         self.model = AutoModelForCausalLM.from_pretrained(repo, **kw)
@@ -99,7 +102,8 @@ class DllmBackend:
     def _load(self):
         # dLLM exposes per-model classes. LLaDA is the primary target here.
         from dllm.models.llada import LLaDA
-        model = LLaDA(model_name=self.repo, dtype=torch.float16, device="cuda")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = LLaDA(model_name=self.repo, dtype=torch.float16, device=device)
         model.set_sampling_steps(self.steps)
         return model
 

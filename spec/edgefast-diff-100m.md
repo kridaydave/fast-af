@@ -20,7 +20,7 @@ B0: Qwen3.5-0.8B (researched 2026-10-30: Qwen3.5 small series is 0.8B / 2B / 4B 
 |---|---|---|
 | B0 | vanilla AR (Qwen3.5-0.8B fp16) | 1x (the reference) |
 | B1 | B0 + int4 QAT | ~2x |
-| B2 | B0 + int4 + EAGLE-3 | 3-6x, the honest off-the-shelf competitor |
+| B2 | B0 + int4 + DFlash2 (replaces EAGLE-3) | 3-6x, DFlash2 up to 2.5x over EAGLE-3 |
 | D1 | this spec | 10x+ hoped |
 
 If D1 doesn't clearly beat B2, there is no reason for it to exist.
@@ -74,6 +74,24 @@ D1 is 100M. Baselines and contenders are size-matched to the 100M band where pos
 2. Size-matched diffusion vs AR at ~100M: HoangHa/smoldlm-144m (144M, block diffusion, block_size 32, Apache 2.0, latest) vs SmolLM2-135M. OpenSML/OpenSML-150M (150M, AR, Sep 2026) only if CUDA-portable (MLX by default). These numbers are the whole scoreboard for D1's own scale.
 3. Paradigm check at scale: LLaDA-8B (default config AND Fast-dLLM decoding) vs Qwen3.5-9B as AR defender. Dream 7B double run optional. DiffusionGemma 26B-A4B optional (skip honestly if no fit). If diffusion can't win after tuning decode policy at 8B, D1 pivots to B2 + competence training.
 4. Optionally run the fixed-state authors' setup if code exists (nearest proxy for D1).
+
+## EAGLE-3 replacement (B2) — revised 2026-11-05
+
+EAGLE-3's reference stacks target newer GPUs (H100+), so on a free T4 it was budgeted as "a day of friction" and ran as plain int4 AR until wired. Research passes since the spec was written show better, T4-friendly options. The replacement is not another autoregressive drafter — it must stay consistent with D1's block-diffusion thesis.
+
+| Replacement | Draft style | Key trait | T4 fit | Source |
+|---|---|---|---|---|
+| DFlash / DFlash2 | block-diffusion drafter | emits a whole block of draft tokens in one forward pass; conditioned on target hidden states; ~2.5x faster than EAGLE-3 | strong — diffusion drafting matches D1's decode policy; small draft model | arXiv:2602.06036 (ICML 2026); llama.cpp `draft-dflash` / `draft-dflash2` (merged 2026-08-27) |
+| DART | parallel logits | predicts multiple masked positions in one forward pass; N-gram-enforced tree pruning; ~30% over EAGLE-3 | strong — no autoregressive drafting rollout | EMNLP 2026 (2026.aclanthology.org/2026.emnlp-main.492) |
+| P-EAGLE | parallel EAGLE | parallelizes EAGLE-3's autoregressive drafting | moderate — still EAGLE-family | arXiv:2602.01469 |
+| DSpark | DFlash + Markov head | adds per-position confidence for adaptive verification | moderate | vLLM Speculators |
+| SuffixDecoding / n-gram prompt lookup | draft-free | no trained drafter; reuses prompt/output n-grams | strong — zero draft cost, architecture-agnostic | vLLM; llama.cpp `ngram-simple` |
+
+**Selection:** DFlash2 as the B2 replacement. It is block-diffusion-native (same paradigm as D1's decode loop), ships in llama.cpp `draft-dflash2` (auto-recognized from a supported checkpoint), and reports up to 2.5x EAGLE-3 speedup. Fallback chain: DART → P-EAGLE → DSpark → SuffixDecoding (draft-free, zero training). If none wire cleanly on T4, B2 degrades to plain int4 AR (same as today) and the gap is noted honestly rather than forced.
+
+**No EAGLE-3 drafter is trained or downloaded.** D1 is 100M; there is no pre-trained EAGLE-3 drafter for a 100M target, and training one adds a mechanism the pilot doesn't need. DFlash2's draft model is small and target-conditioned; if a Qwen3.5-0.8B DFlash2 drafter exists on HF, use it; otherwise B2 stays at plain int4 AR.
+
+EAGLE-3's original caveat stands: "budget a day of friction." That day is now spent evaluating DFlash2/DART instead of wiring EAGLE-3.
 
 ## Hardware reality
 
