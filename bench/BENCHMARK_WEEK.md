@@ -65,6 +65,6 @@ Kill criterion: if (b) doesn't beat (a) on quality at equal TPS at either step c
 
 `results.yaml` with per-model `speed.{median_tps,min_tps,max_tps}` and `humaneval.pass@1` for AR models. L1 pilot gets its own results file.
 
-## Single open decision
+## Tokenizer decision (resolved 2026-11-06)
 
-Tokenizer: train our own 32k BPE on a corpus sample, or reuse an existing one (SmolLM2's cosmo2-tokenizer merges + Qwen3 pre-tokenizer, as smoldlm did)? This affects pretrain data prep but not benchmark week. Decide before pretrain, not before benchmark week.
+Train our own 32k BPE on a corpus sample. Reuse nothing. This affects pretrain data prep; benchmark week is unaffected.

@@ -141,7 +141,7 @@ Standard pilots rehearse a proven design at small scale. Ours can't: 100M models
 
 ## Pretrain data (decided 2026-11-01)
 
-Three buckets, user-approved: general web = FineWeb-Edu (`sample-10BT` slice); code = The Stack Dedup, Python subset (mined); math = FineMath or OpenWebMath. Mix for the ~3-5B token run: ~50% code / ~35% web / ~15% math (web stays a third — the cure for code-biased pretrain). Decontamination (n-gram check vs HumanEval) runs inside the prep script on everything. SFT data (Magicoder class) is recipe step 2, separate from this. Tokenizer: train our own 32k BPE on a corpus sample (pending user confirm). Workflow: ~100MB samples locally to build/test the prep script, full downloads on Colab/Kaggle where training happens.
+Three buckets, user-approved: general web = FineWeb-Edu (`sample-10BT` slice); code = The Stack Dedup, Python subset (mined); math = FineMath or OpenWebMath. Mix for the ~3-5B token run: ~50% code / ~35% web / ~15% math (web stays a third — the cure for code-biased pretrain). Decontamination (n-gram check vs HumanEval) runs inside the prep script on everything. SFT data (Magicoder class) is recipe step 2, separate from this. Tokenizer: train our own 32k BPE on a corpus sample (decided 2026-11-06: train our own). Workflow: ~100MB samples locally to build/test the prep script, full downloads on Colab/Kaggle where training happens.
 
 ## Deliverables
 
