@@ -1,0 +1,15 @@
+elapsed_seconds: 120.5
+common:
+  prompt_len: 1024
+  out_len: 1024
+  runs: 5
+  batch: 1
+  seed: 0
+  dtype: float16
+  quant: null
+  humaneval: true
+  warmup: 1
+results:
+- id: smollm2-135m
+  backend: hf
+  error: AssertionError('Torch not compiled with CUDA enabled')

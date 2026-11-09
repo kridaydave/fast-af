@@ -1,0 +1,31 @@
+elapsed_seconds: 28.1
+common:
+  prompt_len: 1024
+  out_len: 1024
+  runs: 5
+  batch: 1
+  seed: 0
+  dtype: float16
+  quant: null
+  humaneval: true
+  warmup: 1
+results:
+- id: smoldlm-144m
+  backend: custom
+  repo: HoangHa/smoldlm-144m
+  note: 144M block diffusion, block_size 32, Apache-2.0. D1's closest size-matched
+    diffusion twin.
+  speed:
+    median_tps: 349.979
+    min_tps: 332.1
+    max_tps: 365.02
+    runs: 5
+    sample_text: "\n    def _sift_down(self, i):\n        if =(([[]]]]\n]]]]]]\n]]]]]][[[]]]]\n\
+      ]]]]]]]][]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]"
+    tokens_per_run:
+    - 1024
+    - 1024
+    - 1024
+    - 1024
+    - 1024
+    prompt_tokens: 1024

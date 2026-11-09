@@ -1,0 +1,79 @@
+elapsed_seconds: 2337.3
+common:
+  prompt_len: 1024
+  out_len: 1024
+  runs: 5
+  batch: 1
+  seed: 0
+  dtype: float16
+  quant: null
+  humaneval: true
+  warmup: 1
+results:
+- id: qwen3.5-0.8b
+  backend: hf
+  repo: Qwen/Qwen3.5-0.8B
+  note: GDN hybrid AR, same family as D1. B1/B2 build on this.
+  speed:
+    median_tps: 18.562
+    min_tps: 18.352
+    max_tps: 18.816
+    runs: 5
+    sample_text: ":])\n    return out\n\ndef quicksort(arr):\n    if len(arr) <= 1:\n\
+      \        return arr\n    pivot = arr[0]\n    left = [x for x in arr if x < pivot]\n\
+      \    middle = [x for x in arr if x == pivot]\n    right = [x "
+    tokens_per_run:
+    - 1024
+    - 1024
+    - 1024
+    - 1024
+    - 1024
+    prompt_tokens: 1024
+  humaneval:
+    n: 50
+    passed: 3
+    pass@1: 0.06
+- id: qwen3.5-0.8b-int4
+  backend: hf
+  repo: Qwen/Qwen3.5-0.8B
+  note: B0 + int4 QAT, expected ~2x vs B0
+  speed:
+    median_tps: 14.744
+    min_tps: 14.585
+    max_tps: 14.817
+    runs: 5
+    sample_text: ":])\n    return out\n\ndef merge_sort(arr):\n    if len(arr) <=\
+      \ 1:\n        return arr\n    mid = len(arr) // 2\n    left = merge_sort(arr[:mid])\n\
+      \    right = merge_sort(arr[mid:])\n    out, i, j = [], 0, 0\n  "
+    tokens_per_run:
+    - 1024
+    - 1024
+    - 1024
+    - 1024
+    - 1024
+    prompt_tokens: 1024
+  humaneval:
+    n: 50
+    passed: 1
+    pass@1: 0.02
+- id: lfm2.5-350m
+  backend: hf
+  repo: LiquidAI/LFM2.5-350M
+  note: 354M hybrid AR, fast; latest small hybrid reference
+  speed:
+    median_tps: 41.437
+    min_tps: 36.721
+    max_tps: 42.889
+    runs: 5
+    sample_text: "); out.extend(right[j:])\n    return"
+    tokens_per_run:
+    - 12
+    - 12
+    - 12
+    - 12
+    - 12
+    prompt_tokens: 1025
+  humaneval:
+    n: 50
+    passed: 5
+    pass@1: 0.1
