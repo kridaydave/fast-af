@@ -39,7 +39,7 @@ models:
   - id: qwen3.5-0.8b-int4       # B1
     backend: hf
     repo: Qwen/Qwen3.5-0.8B
-    quant: int4                 # GPTQ int4 (T4 has no AWQ)
+    quant: int4                 # bnb int4 (AWQ also runs on T4, see BENCHMARK_WEEK B1)
     humaneval: true
     note: "B0 + int4 QAT, expected ~2x vs B0"
 
@@ -65,6 +65,14 @@ models:
     block_size: 32
     steps: 8
     confidence: 0.9
+    # New decode knobs (defaults shown, wire one at a time for clean deltas):
+    # temperature: 0.0     # >0 = stock gumbel sampling; pair with commit: topk
+    #                      # (the 0.9 confidence threshold is calibrated to
+    #                      #  greedy probs -- threshold+temperature stalls)
+    # commit: confidence   # "topk" = stock schedule, k0 = block_size // steps
+    #                      #  slots per pass regardless of threshold
+    # kv_cache: false      # true = decode against the model's KV cache (est.
+    #                      #  >=2x); keep false for the cached-off baseline row
     humaneval: false            # diffusion row is speed-only; HumanEval stays AR-only (spec)
     note: "144M block diffusion, block_size 32, Apache-2.0. D1's closest size-matched diffusion twin."
 

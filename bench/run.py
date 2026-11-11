@@ -61,7 +61,10 @@ def _build_backend(m: dict, common: dict):
         return load_smoldlm(m["repo"], block_size=m["block_size"],
                             steps=m.get("steps", 8),
                             confidence=m.get("confidence", 0.9),
-                            dtype=common["dtype"])
+                            dtype=common["dtype"],
+                            temperature=m.get("temperature", 0.0),
+                            commit=m.get("commit", "confidence"),
+                            kv_cache=m.get("kv_cache", False))
     raise ValueError(f"unknown backend: {b}")
 
 
@@ -69,12 +72,16 @@ def _timed_gen(backend, prompt: str, out_len: int, runs: int) -> dict:
     tps = []
     texts = []
     toks = []
+    passes = []
+    blocks = []
     for _ in range(runs):
         g: Generation = backend.generate(prompt, out_len)
         tps.append(g.num_tokens / g.decode_seconds)
         texts.append(g.text)
         toks.append(g.num_tokens)
-    return {
+        passes.append(g.passes)
+        blocks.append(g.blocks)
+    out: dict = {
         "median_tps": round(statistics.median(tps), 3),
         "min_tps": round(min(tps), 3),
         "max_tps": round(max(tps), 3),
@@ -82,6 +89,16 @@ def _timed_gen(backend, prompt: str, out_len: int, runs: int) -> dict:
         "sample_text": texts[0][:200],
         "tokens_per_run": toks,
     }
+    # pass accounting: 0 = backend doesn't track it (AR/dllm), nonzero only
+    # for the diffusion loop. tokens_per_pass is how many tokens each
+    # forward pass actually bought -- TPS alone hides extra denoising work.
+    med_passes = statistics.median(passes)
+    if med_passes > 0:
+        out["tokens_emitted"] = sum(toks)
+        out["passes"] = int(med_passes)
+        out["blocks"] = int(statistics.median(blocks))
+        out["tokens_per_pass"] = round(sum(toks) / sum(passes), 3)
+    return out
 
 
 def run_model(m: dict, common: dict) -> dict:

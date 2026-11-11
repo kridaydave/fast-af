@@ -174,3 +174,143 @@ def test_warmup_runs():
     backend, tok, _ = make_backend(lambda p: "high")
     backend.warmup()
     assert tok.decoded is not None
+
+
+def test_topk_fills_stock_schedule_counts():
+    # commit="topk" ignores the threshold and fills k0 = block_size // steps
+    # = 2 slots per pass (the modeling_smoldlm schedule), so one block
+    # burns all 4 passes: masks left per pass go 8, 6, 4, 2
+    blocks_seen = []
+
+    def score_fn(seq):
+        blocks_seen.append(seq[0, -8:].tolist())
+        logits = torch.full((1, seq.shape[1], VOCAB), -20.0)
+        for p in range(seq.shape[1]):
+            logits[0, p, p] = 0.0          # conf ~0.5, below any threshold
+            logits[0, p, 32 + p] = 0.0
+        return logits
+
+    tok = RecordingTokenizer()
+    backend = CustomBackend(block_size=8, steps=4, confidence=0.9,
+                            score_fn=score_fn, tokenizer=tok, eos_id=EOS,
+                            commit="topk")
+    g = backend.generate("prompt", out_len=8)
+    assert [b.count(MASK) for b in blocks_seen] == [8, 6, 4, 2]
+    assert MASK not in tok.decoded
+    assert (g.passes, g.blocks) == (4, 1)
+
+
+def test_pass_and_block_counters():
+    # the spec wants passes/blocks in every results row; they must reflect
+    # the loop: one confident block = 1 pass, threshold thrash = steps
+    # passes, out_len over one block = two blocks
+    backend, _, _ = make_backend(lambda p: "high")
+    g = backend.generate("prompt", out_len=8)
+    assert (g.passes, g.blocks) == (1, 1)
+
+    backend, _, _ = make_backend(lambda p: "low", steps=3)
+    g = backend.generate("prompt", out_len=8)
+    assert (g.passes, g.blocks) == (3, 1)
+
+    backend, _, _ = make_backend(lambda p: "high")
+    g = backend.generate("prompt", out_len=12)
+    assert (g.passes, g.blocks) == (2, 2)
+
+
+def test_kv_cache_routes_through_hooks_not_score_fn():
+    # kv_cache=True must never touch score_fn: the prefix is warmed into
+    # the cache once, every denoising pass scores only the block at its
+    # absolute position, and each committed block is appended to the cache
+    warm, score, reset = [], [], []
+
+    def score_block(block, pos_offset):
+        score.append((tuple(block[0].tolist()), pos_offset))
+        logits = torch.full((1, block.shape[1], VOCAB), -20.0)
+        for i in range(block.shape[1]):
+            logits[0, i, pos_offset + i] = 20.0  # absolute-position token
+        return logits
+
+    def score_fn(seq):
+        raise AssertionError("score_fn called although kv_cache=True")
+
+    tok = RecordingTokenizer()
+    backend = CustomBackend(block_size=8, steps=4, confidence=0.9,
+                            score_fn=score_fn, tokenizer=tok, eos_id=EOS,
+                            kv_cache=True, cache_reset=lambda: reset.append(1),
+                            cache_warm=lambda ids, pos: warm.append((tuple(ids), pos)),
+                            score_block=score_block)
+    g = backend.generate("prompt", out_len=8)
+    assert reset == [1]                      # one cache clear per generate
+    assert warm == [(PREFIX, 0),             # prefix warmed before timing
+                    ((2, 3, 4, 5, 6, 7, 8, 9), 2)]  # committed block
+    assert score == [((MASK,) * 8, 2)]       # one pass, block at pos 2
+    assert tok.decoded == [2, 3, 4, 5, 6, 7, 8, 9]
+    assert (g.passes, g.blocks) == (1, 1)
+
+
+def test_kv_cache_positions_advance_across_blocks():
+    # out_len 12 needs two blocks; the second must score at pos 10 (prefix
+    # 2 + first block 8) and warm at the same offset, never re-read pos 0
+    warm, score = [], []
+
+    def score_block(block, pos_offset):
+        score.append(pos_offset)
+        logits = torch.full((1, block.shape[1], VOCAB), -20.0)
+        for i in range(block.shape[1]):
+            logits[0, i, pos_offset + i] = 20.0
+        return logits
+
+    tok = RecordingTokenizer()
+    backend = CustomBackend(block_size=8, steps=4, confidence=0.9,
+                            score_fn=lambda seq: (_ for _ in ()).throw(
+                                AssertionError("score_fn called")),
+                            tokenizer=tok, eos_id=EOS,
+                            kv_cache=True, cache_reset=lambda: None,
+                            cache_warm=lambda ids, pos: warm.append((tuple(ids), pos)),
+                            score_block=score_block)
+    g = backend.generate("prompt", out_len=12)
+    assert score == [2, 10]
+    assert [pos for _, pos in warm] == [0, 2, 10]
+    assert tok.decoded == list(range(2, 18))
+    assert (g.passes, g.blocks) == (2, 2)
+
+
+def test_kv_cache_requires_all_three_hooks():
+    with pytest.raises(ValueError, match="cache"):
+        CustomBackend(block_size=8, steps=4, confidence=0.9,
+                      score_fn=lambda seq: None, tokenizer=RecordingTokenizer(),
+                      kv_cache=True)
+
+
+def test_unknown_commit_rejected():
+    with pytest.raises(ValueError, match="commit"):
+        CustomBackend(block_size=8, steps=4, confidence=0.9,
+                      score_fn=lambda seq: None, tokenizer=RecordingTokenizer(),
+                      commit="sampling")
+
+
+def test_negative_temperature_rejected():
+    with pytest.raises(ValueError, match="temperature"):
+        CustomBackend(block_size=8, steps=4, confidence=0.9,
+                      score_fn=lambda seq: None, tokenizer=RecordingTokenizer(),
+                      temperature=-0.1)
+
+
+def test_temperature_samples_and_still_commits():
+    # temperature > 0 goes through the stock gumbel path with commit="topk"
+    # (the confidence threshold is calibrated to greedy probs, defect D3);
+    # output must still be mask-free with the same stock pass schedule
+    def score_fn(seq):
+        logits = torch.full((1, seq.shape[1], VOCAB), -20.0)
+        for p in range(seq.shape[1]):
+            logits[0, p, p] = 20.0
+        return logits
+
+    tok = RecordingTokenizer()
+    backend = CustomBackend(block_size=8, steps=4, confidence=0.9,
+                            score_fn=score_fn, tokenizer=tok, eos_id=EOS,
+                            temperature=1.0, commit="topk")
+    g = backend.generate("prompt", out_len=8)
+    assert g.num_tokens == 8
+    assert MASK not in tok.decoded
+    assert (g.passes, g.blocks) == (4, 1)  # k0 = 2 per pass, 8 slots

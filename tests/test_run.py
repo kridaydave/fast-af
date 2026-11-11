@@ -70,3 +70,41 @@ def test_fit_prompt_terminates_on_roundtrip_drift():
     text, n = fit_prompt(_SPEED_PROMPTS, DriftingTokenizer(), TARGET)
     assert isinstance(text, str)
     assert abs(n - TARGET) <= 3
+
+
+class StubBackend:
+    """Returns prebuilt Generations so _timed_gen's accounting is testable."""
+
+    def __init__(self, generations):
+        self._gens = list(generations)
+
+    def generate(self, prompt, out_len):
+        return self._gens.pop(0)
+
+
+def test_timed_gen_records_pass_accounting():
+    # the spec requires tokens_emitted/passes/blocks/tokens_per_pass in the
+    # results row for diffusion backends
+    from bench.backends import Generation
+    from bench.run import _timed_gen
+
+    gens = [Generation(text="t", num_tokens=8, decode_seconds=0.5,
+                       passes=4, blocks=1) for _ in range(3)]
+    out = _timed_gen(StubBackend(gens), "p", out_len=8, runs=3)
+    assert out["tokens_emitted"] == 24
+    assert out["passes"] == 4
+    assert out["blocks"] == 1
+    assert out["tokens_per_pass"] == 2.0  # 24 tokens / 12 passes
+
+
+def test_timed_gen_omits_accounting_for_untracked_backends():
+    # AR/dllm backends leave passes=0; the row must not carry fake zeros
+    from bench.backends import Generation
+    from bench.run import _timed_gen
+
+    gens = [Generation(text="t", num_tokens=8, decode_seconds=0.5)
+            for _ in range(2)]
+    out = _timed_gen(StubBackend(gens), "p", out_len=8, runs=2)
+    assert "passes" not in out
+    assert "tokens_per_pass" not in out
+    assert out["median_tps"] > 0
