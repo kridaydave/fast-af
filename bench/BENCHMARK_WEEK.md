@@ -5,7 +5,9 @@ Prepared 2026-11-06. Run on Colab free T4. Execute tiers in order; do not skip a
 ## Preflight (once)
 
 ```bash
-BENCH_RUN=full bash bootstrap_colab.sh
+BENCH_REPO_DIR=/content/fast-af BENCH_RUN=none bash bootstrap_colab.sh
+cd /content/fast-af
+python -m pytest -q
 python -m bench --config bench/config.yaml --out results.yaml
 ```
 
@@ -19,7 +21,7 @@ Verify CUDA: `python -c "import torch; print(torch.cuda.get_device_name(0))"` sh
 
 B1 = Qwen3.5-0.8B int4. AWQ runs on T4 (AutoAWQ CC 7.5+, verified 2026-11-11; repo archived, vLLM/llm-compressor is the maintained path), but bitsandbytes is what bootstrap installs, so bnb 4bit (compute fp16) is the default here. Note our own T4 run measured bnb int4 SLOWER than fp16 (14.7 vs 18.6, results_t4.yaml), so int4 is an experiment, not a free win.
 
-B2 = Qwen3.5-0.8B int4 + DFlash2. **No DFlash2 drafter exists for 0.8B** (only 2B and 4B drafters on HF). Per spec fallback, B2 degrades to plain int4 AR. Record this honestly in results. If you want to test DFlash2, run against `Qwen/Qwen3.5-2B` with `rasyosef/Qwen3.5-2B-DFlash2` and note the size gap.
+B2 = Qwen3.5-0.8B int4 + DFlash2. **No DFlash2 drafter exists for 0.8B** (only 2B and 4B drafters on HF). The placeholder row now fails loudly until a real speculative backend is wired; plain int4 must never be reported as B2. If you want to test DFlash2, run against `Qwen/Qwen3.5-2B` with `rasyosef/Qwen3.5-2B-DFlash2` and note the size gap.
 
 Commands:
 ```bash
@@ -32,7 +34,7 @@ python -m bench --only lfm2.5-350m
 ## Tier 2 — size-matched diffusion vs AR (day 2)
 
 - `HoangHa/smoldlm-144m` (block diffusion, block_size 32) vs `HuggingFaceTB/SmolLM2-135M` (AR).
-- smoldlm is NOT HF transformers compatible. It ships its own `modeling_smoldlm.py` and `generate()`. Needs a new backend class or a standalone timing script. Do not assume `AutoModelForCausalLM` works.
+- smoldlm is NOT HF transformers compatible. Its custom backend is wired to `modeling_smoldlm.py`, including cached and uncached policy rows. Do not assume `AutoModelForCausalLM` works.
 - smoldlm caveats: greedy decoding degenerates (use temp >= 0.5), early checkpoint (~26B of 100B tokens), no instruction tuning. TPS numbers may not reflect final quality.
 - Optional: `OpenSML/OpenSML-150M` only if CUDA-portable (MLX by default). Skip if not.
 
@@ -68,9 +70,9 @@ below is pushed to the end of benchmark week. Do not start it early.
 
 ## Known friction items (budget time)
 
-1. smoldlm-144m custom loader — new backend class needed.
+1. smoldlm-144m custom loader — wired; next step is the corrected cached/uncached T4 measurement.
 2. LLaDA-8B Fast-dLLM decode — wiring, not plug-and-play.
-3. EAGLE-3 / DFlash2 — no 0.8B drafter; B2 degrades to plain int4 AR.
+3. DFlash2 — no 0.8B drafter; B2 remains unavailable and plain int4 stays B1.
 4. LFM2.5 license "other" — verify redistribution terms before publishing.
 5. T4 has no bf16. AWQ does run on sm75 (verified 2026-11-11). fp16 + bnb int4 is what bootstrap installs; bnb int4 measured slower than fp16 on T4.
 

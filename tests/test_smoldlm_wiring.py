@@ -9,9 +9,9 @@ from bench.backends import load_smoldlm
 REPO = "HoangHa/smoldlm-144m"
 
 
-def _backend(dtype="float32"):
+def _backend(dtype="float32", kv_cache=False):
     return load_smoldlm(REPO, block_size=32, steps=4, confidence=0.9,
-                        dtype=dtype)
+                        dtype=dtype, kv_cache=kv_cache)
 
 
 def test_score_fn_returns_pinned_logits():
@@ -37,7 +37,17 @@ def test_generate_produces_generation():
         assert isinstance(g.text, str), dtype
         assert g.num_tokens >= 1, dtype
         assert g.decode_seconds > 0, dtype
-        assert backend.device == "cpu"  # no CUDA on this box; T4 runs cuda
+        assert backend.device in ("cpu", "cuda")
+
+
+def test_cached_generate_uses_real_model_hooks():
+    backend = _backend(kv_cache=True)
+    g = backend.generate("The meaning of life is", 8)
+    assert isinstance(g.text, str)
+    assert g.num_tokens >= 1
+    assert g.passes >= 1
+    assert g.warm_passes >= 1  # at least the cached prefix
+    assert 0 not in (g.token_ids or [])
 
 
 def test_roster_path_builds_and_generates():

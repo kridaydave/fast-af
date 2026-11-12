@@ -14,13 +14,13 @@ The design attacks both terms: a mostly-delta-rule backbone shrinks the per-pass
 
 ## Baseline
 
-B0: Qwen3.5-0.8B (researched 2026-10-30: Qwen3.5 small series is 0.8B / 2B / 4B / 9B; 0.8B is the closest small hybrid). fp16, vanilla decode, batch 1. Everything is measured against it: same GPU, batch 1, 1k in / 1k out, median of 5 runs. B1 (int4) and B2 (EAGLE-3) build on the same Qwen model, not on a separately trained baseline. Known caveat: D1 is 100M vs B0's 0.8B — 8x smaller, so a TPS win over B0 is expected from size alone and proves little by itself. The honest size-matched comparison is against SmolLM2-135M (see benchmark week); B0 is the "latest small hybrid" reference point. The real guardrail is quality: D1's pass@1 will be far below B0's, and the gap is tracked, not hidden. No official code benchmarks exist for Qwen3.5-0.8B, so its HumanEval pass@1 is measured by us. Reference numbers in this doc are H100-scale; all actual benchmark runs happen on Colab's free T4 (see hardware section).
+B0: Qwen3.5-0.8B (researched 2026-10-30: Qwen3.5 small series is 0.8B / 2B / 4B / 9B; 0.8B is the closest small hybrid). fp16, vanilla decode, batch 1. Everything is measured against it: same GPU, batch 1, 1k in / 1k out, median of 5 runs. B1 (bitsandbytes post-training int4 in the benchmark harness) and B2 (DFlash2, currently unavailable for the 0.8B target) build on the same Qwen model, not on a separately trained baseline. Known caveat: D1 is 100M vs B0's 0.8B — 8x smaller, so a TPS win over B0 is expected from size alone and proves little by itself. The honest size-matched comparison is against SmolLM2-135M (see benchmark week); B0 is the "latest small hybrid" reference point. The real guardrail is quality: D1's pass@1 will be far below B0's, and the gap is tracked, not hidden. No official code benchmarks exist for Qwen3.5-0.8B, so its HumanEval pass@1 is measured by us. Reference numbers in this doc are H100-scale; all actual benchmark runs happen on Colab's free T4 (see hardware section).
 
 | Step | Config | Expected vs B0 |
 |---|---|---|
 | B0 | vanilla AR (Qwen3.5-0.8B fp16) | 1x (the reference) |
-| B1 | B0 + int4 QAT | ~2x |
-| B2 | B0 + int4 + DFlash2 (replaces EAGLE-3) | 3-6x, DFlash2 up to 2.5x over EAGLE-3 |
+| B1 | B0 + bitsandbytes post-training int4 | 0.79x measured on the lean T4 stack; the old ~2x expectation was invalidated |
+| B2 | B0 + int4 + DFlash2 (replaces EAGLE-3) | unavailable for 0.8B until a real drafter/backend exists |
 | D1 | this spec | 10x+ hoped |
 
 If D1 doesn't clearly beat B2, there is no reason for it to exist.
@@ -70,7 +70,7 @@ Goodhart defense for the "test fixer" failure mode (model learns to pass tests w
 
 D1 is 100M. Baselines and contenders are size-matched to the 100M band where possible; larger "latest small" models are included with the size gap acknowledged (honest direction).
 
-1. Reproduce AR baselines at ~100M: SmolLM2-135M (yardstick) and the latest small hybrid Qwen3.5-0.8B (GDN backbone, same family as D1) + LiquidAI LFM2.5-350M. B1 (int4 QAT) and B2 (int4 + EAGLE-3, budget a day of friction) build on the Qwen3.5-0.8B. No Qwen model exists near 100M; size gap is acknowledged.
+1. Reproduce AR baselines at ~100M: SmolLM2-135M (yardstick) and the latest small hybrid Qwen3.5-0.8B (GDN backbone, same family as D1) + LiquidAI LFM2.5-350M. B1 is bitsandbytes post-training int4. B2 is DFlash2 and remains unavailable for the 0.8B target until a real drafter/backend exists; the harness refuses to mislabel plain int4 as B2. No Qwen model exists near 100M; size gap is acknowledged.
 2. Size-matched diffusion vs AR at ~100M: HoangHa/smoldlm-144m (144M, block diffusion, block_size 32, Apache 2.0, latest) vs SmolLM2-135M. OpenSML/OpenSML-150M (150M, AR, Sep 2026) only if CUDA-portable (MLX by default). These numbers are the whole scoreboard for D1's own scale.
 3. Paradigm check at scale: LLaDA-8B (default config AND Fast-dLLM decoding) vs Qwen3.5-9B as AR defender. Dream 7B double run optional. DiffusionGemma 26B-A4B optional (skip honestly if no fit). If diffusion can't win after tuning decode policy at 8B, D1 pivots to B2 + competence training.
 4. Optionally run the fixed-state authors' setup if code exists (nearest proxy for D1).
@@ -87,9 +87,9 @@ EAGLE-3's reference stacks target newer GPUs (H100+), so on a free T4 it was bud
 | DSpark | DFlash + Markov head | adds per-position confidence for adaptive verification | moderate | vLLM Speculators |
 | SuffixDecoding / n-gram prompt lookup | draft-free | no trained drafter; reuses prompt/output n-grams | strong — zero draft cost, architecture-agnostic | vLLM; llama.cpp `ngram-simple` |
 
-**Selection:** DFlash2 as the B2 replacement. It is block-diffusion-native (same paradigm as D1's decode loop), ships in llama.cpp `draft-dflash2` (auto-recognized from a supported checkpoint), and reports up to 2.5x EAGLE-3 speedup. Fallback chain: DART → P-EAGLE → DSpark → SuffixDecoding (draft-free, zero training). If none wire cleanly on T4, B2 degrades to plain int4 AR (same as today) and the gap is noted honestly rather than forced.
+**Selection:** DFlash2 as the B2 replacement. It is block-diffusion-native (same paradigm as D1's decode loop), ships in llama.cpp `draft-dflash2` (auto-recognized from a supported checkpoint), and reports up to 2.5x EAGLE-3 speedup. Fallback chain: DART → P-EAGLE → DSpark → SuffixDecoding (draft-free, zero training). If none wire cleanly on T4, B2 is unavailable; plain int4 remains B1 and must not be relabeled.
 
-**No EAGLE-3 drafter is trained or downloaded.** D1 is 100M; there is no pre-trained EAGLE-3 drafter for a 100M target, and training one adds a mechanism the pilot doesn't need. DFlash2's draft model is small and target-conditioned; if a Qwen3.5-0.8B DFlash2 drafter exists on HF, use it; otherwise B2 stays at plain int4 AR.
+**No EAGLE-3 drafter is trained or downloaded.** D1 is 100M; there is no pre-trained EAGLE-3 drafter for a 100M target, and training one adds a mechanism the pilot doesn't need. DFlash2's draft model is small and target-conditioned; if a Qwen3.5-0.8B DFlash2 drafter appears, use it; otherwise B2 remains unavailable.
 
 EAGLE-3's original caveat stands: "budget a day of friction." That day is now spent evaluating DFlash2/DART instead of wiring EAGLE-3.
 
@@ -121,7 +121,7 @@ The 2026-10-30 L1 tied loop iterations to denoising steps and used equal TPS as 
 
 **Prerequisites (hard gates, all must pass before training L1v2 twins):**
 1. **G0 Harness calibration (MEASURED instrument check):** run `HuggingFaceTB/SmolLM2-1.7B` base once on HumanEval-164 through our harness with a frozen, prewritten prompt template and execution script. Do not tune prompts, temperature, commit mode, thresholds, or parsing on HumanEval results. Record the score only as harness calibration. Pass: within +/- 6 points of 22.6 (SmolLM2-1.7B base, HumanEval, PAPER arXiv 2502.02737 Table 4; confirm the exact HumanEval version/protocol from the paper when running G0). HumanEval remains sealed for all D1 model decisions.
-2. **G1 Sampler regression:** patched decode backend at temperature 0.0 reproduces prior smoldlm behavior with >= 99% token agreement, allowing fp32-softmax near-tie flips (MEASURED baseline in `results_t4.yaml`; `bench/backends.py` is greedy argmax on fp16 softmax with no pass counter).
+2. **G1 Sampler regression:** patched decode backend at temperature 0.0 reproduces a frozen pre-patch smoldlm baseline with >= 99% token agreement, allowing fp32-softmax near-tie flips. The legacy `results_t4.yaml` stores only a text preview and cannot prove this gate; re-capture the baseline from the pre-patch commit with full token IDs. Current result files record full `sample_token_ids` plus pass/fill/fallback accounting for future regressions.
 3. **G2 Sampler and world check:** decode supports explicit `temperature` and `commit` (`topk` and confidence), fp32 softmax, and logs `tokens_emitted`, `passes`, `blocks`, `tokens_per_pass`, per-step fill counts, fallback commits, and `stop_reason`/EOS stats for code eval runs. Run the smoldlm author's own decoder as an upper bound, run a temperature/commit sweep, and run a teacher-forced likelihood check (real vs line-shuffled code). Reject any decode-policy cell if fills collapse to about 1-token fallback behavior without explanation. If the author decoder scores above 0 and our loop scores 0, fix the loop before training. If checks show no usable code signal (World A), drop MBPP pass@1 as a pilot decision endpoint and use validation NLL and gPPL only.
 4. **G3 Recipe and pipeline freeze:** week-2 compute probe is measured; train/checkpoint/resume/eval works on a base D1 smoke pretrain (100-200M tokens). Decode policy (temperature, commit, steps, block, confidence), train/infer spec (objective, mask schedule, S_train unroll, and whether backward is unrolled through all S_train mid-block passes or truncated BPTT is explicitly chosen and logged before training), and data prep are frozen before twin training starts.
 

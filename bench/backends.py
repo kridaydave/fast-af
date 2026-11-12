@@ -9,17 +9,23 @@ Each backend exposes the same contract:
     Generation = {
         "text": str,
         "num_tokens": int,        # generated tokens
-        "decode_seconds": float,  # time to emit them (excludes prefill)
+        "decode_seconds": float,  # total generation time after tokenization
+        "prefill_seconds": float, # isolated prefill diagnostic
         "passes": int,            # denoising forward passes (diffusion only)
+        "warm_passes": int,       # cache-population forwards
         "blocks": int,            # committed blocks (diffusion only)
     }
 
-The harness wraps generate() in a median-of-N timer and computes TPS =
-num_tokens / median(decode_seconds). Backends must not do their own timing.
+Every backend times the same outer window: all model computation needed to
+generate the continuation after host-side tokenization. `prefill_seconds` is
+reported separately with `prefill_kind`: AR uses a standalone probe, cached
+diffusion records the actual sub-window, and uncached diffusion cannot isolate
+prefill because it recomputes the full prefix on every denoising pass.
 """
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -31,22 +37,27 @@ class Generation:
     text: str
     num_tokens: int
     decode_seconds: float
+    prefill_seconds: float = 0.0
+    prefill_kind: str = "not_measured"
     # decode accounting (diffusion loop; 0 where not tracked). TPS alone
     # hides how many forward passes bought the tokens -- the spec requires
     # passes and tokens_per_pass in every results row.
     passes: int = 0
+    warm_passes: int = 0
     blocks: int = 0
+    stop_reason: str = "unknown"
+    token_ids: list[int] | None = None
+    fill_counts: list[int] | None = None
+    fallback_commits: int = 0
 
 
 class TransformersBackend:
     """Autoregressive models via HuggingFace generate, greedy (do_sample=False),
     batch 1. Robust on free T4 without vLLM's version gymnastics.
 
-    Timing note: we time the whole generate() call, so prompt prefill is
-    included in the decode window. For batch-1 single-stream that's small vs
-    the 1k-token output and consistent across AR models, so the TPS *ratios*
-    (B1/B2 vs B0) the spec wants are unaffected. Swap in a vLLM backend later
-    if absolute TPS matters.
+    Timing includes the whole model.generate() call, including prefill. A
+    separate prefill probe is measured and reported, but TPS always uses the
+    total generation window so it remains comparable with other backends.
     """
 
     def __init__(self, repo: str, quant: str | None, dtype: str,
@@ -74,20 +85,45 @@ class TransformersBackend:
     def warmup(self) -> None:
         self.generate("the quick brown fox", 8)
 
-    def generate(self, prompt: str, out_len: int) -> Generation:
+    def generate(self, prompt: str, out_len: int,
+                 force_length: bool = True) -> Generation:
         import torch
+        if out_len < 1:
+            raise ValueError(f"out_len must be >= 1, got {out_len}")
         enc = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         plen = enc["input_ids"].shape[1]
+        if self.device == "cuda":
+            torch.cuda.synchronize()
+        prefill_t0 = time.perf_counter()
+        with torch.no_grad():
+            self.model(**enc, use_cache=True)
+        if self.device == "cuda":
+            torch.cuda.synchronize()
+        prefill_s = time.perf_counter() - prefill_t0
+        generate_kw = {
+            "max_new_tokens": out_len,
+            "do_sample": False,
+            "pad_token_id": self.tokenizer.pad_token_id,
+        }
+        if force_length:
+            generate_kw["min_new_tokens"] = out_len
+        if self.device == "cuda":
+            torch.cuda.synchronize()
         t0 = time.perf_counter()
         with torch.no_grad():
-            out = self.model.generate(
-                **enc, max_new_tokens=out_len, do_sample=False,
-                pad_token_id=self.tokenizer.pad_token_id)
+            out = self.model.generate(**enc, **generate_kw)
+        if self.device == "cuda":
+            torch.cuda.synchronize()
         decode_s = time.perf_counter() - t0
         toks = int(out.shape[1] - plen)
-        text = self.tokenizer.decode(out[0, plen:], skip_special_tokens=True)
-        return Generation(text=text, num_tokens=max(toks, 1),
-                          decode_seconds=max(decode_s, 1e-6))
+        token_ids = out[0, plen:].tolist()
+        text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
+        stop_reason = "max_new_tokens" if toks >= out_len else "eos"
+        return Generation(text=text, num_tokens=toks,
+                          decode_seconds=max(decode_s, 1e-6),
+                          prefill_seconds=max(prefill_s, 1e-6),
+                          prefill_kind="standalone_probe",
+                          stop_reason=stop_reason, token_ids=token_ids)
 
 
 class DllmBackend:
@@ -105,6 +141,10 @@ class DllmBackend:
         self.mode = mode
         self.steps = steps
         self.set_seed = set_seed
+        if mode != "default":
+            raise NotImplementedError(
+                f"dLLM mode {mode!r} is not wired; refusing to label a native "
+                "decode as Fast-dLLM")
 
     def _load(self):
         # dLLM exposes per-model classes. LLaDA is the primary target here.
@@ -120,14 +160,29 @@ class DllmBackend:
 
     def _gen(self, model, prompt: str, out_len: int) -> Generation:
         import torch
+        if out_len < 1:
+            raise ValueError(f"out_len must be >= 1, got {out_len}")
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         t0 = time.perf_counter()
         out = model.generate(prompt, max_new_tokens=out_len,
                              num_steps=self.steps)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         decode_s = time.perf_counter() - t0
         text = out if isinstance(out, str) else getattr(out, "text", str(out))
-        # token count via the model's tokenizer when available
-        num_tokens = getattr(model, "_num_tokens", None) or out_len
-        return Generation(text=text, num_tokens=num_tokens, decode_seconds=max(decode_s, 1e-6))
+        num_tokens = getattr(model, "_num_tokens", None)
+        if num_tokens is None:
+            tokenizer = getattr(model, "tokenizer", None)
+            if tokenizer is None:
+                raise RuntimeError(
+                    "dLLM backend did not expose generated token count or tokenizer")
+            encoded = tokenizer.encode(text)
+            num_tokens = len(encoded if isinstance(encoded, list) else encoded.ids)
+        stop_reason = "max_new_tokens" if num_tokens >= out_len else "eos_or_backend"
+        return Generation(text=text, num_tokens=num_tokens,
+                          decode_seconds=max(decode_s, 1e-6),
+                          stop_reason=stop_reason)
 
     def generate(self, prompt: str, out_len: int) -> Generation:
         return self._gen(self._model, prompt, out_len)
@@ -169,6 +224,8 @@ class CustomBackend:
                  cache_reset: Callable[[], None] | None = None,
                  cache_warm: Callable[[list[int], int], None] | None = None,
                  score_block: Callable[..., Any] | None = None):
+        if block_size < 1:
+            raise ValueError(f"block_size must be >= 1, got {block_size}")
         if steps < 1:
             raise ValueError(f"steps must be >= 1, got {steps}")
         if temperature < 0:
@@ -179,6 +236,11 @@ class CustomBackend:
             raise ValueError(
                 "kv_cache=True needs cache_reset, cache_warm and score_block "
                 "hooks (load_smoldlm wires them)")
+        if temperature > 0 and commit == "confidence":
+            warnings.warn(
+                "temperature > 0 with commit='confidence' commonly collapses "
+                "to fallback commits; use commit='topk' for the stock schedule",
+                RuntimeWarning, stacklevel=2)
         self.block_size = block_size
         self.steps = steps
         self.confidence = confidence
@@ -224,24 +286,40 @@ class CustomBackend:
             return self.score_block(block_t, pos_offset=pos_offset)
         return self.score_fn(seq)
 
-    def _warm(self, ids: list[int]) -> None:
+    def _warm(self, ids: list[int]) -> int:
         """Feed committed tokens into the KV cache in block_size chunks."""
         if not self.kv_cache or not ids:
-            return
+            return 0
+        calls = 0
         for start in range(0, len(ids), self.block_size):
             self.cache_warm(ids[start:start + self.block_size], start)
+            calls += 1
+        return calls
 
     def generate(self, prompt: str, out_len: int) -> Generation:
+        if out_len < 1:
+            raise ValueError(f"out_len must be >= 1, got {out_len}")
         prefix = self.tokenizer.encode(prompt).ids
         out_ids = list(prefix)
+        if self.device == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.perf_counter()
+        prefill_s = 0.0
+        warm_passes = 0
         if self.kv_cache:
             self.cache_reset()
-            self._warm(out_ids)
-        t0 = time.perf_counter()
+            prefill_t0 = time.perf_counter()
+            warm_passes += self._warm(out_ids)
+            if self.device == "cuda":
+                torch.cuda.synchronize()
+            prefill_s = time.perf_counter() - prefill_t0
 
         emitted = 0
         passes = 0
         blocks = 0
+        fill_counts: list[int] = []
+        fallback_commits = 0
+        stop_reason = "max_new_tokens"
         while emitted < out_len:
             block = [self.MASK_ID] * self.block_size
             # stock schedule: commits-per-pass fixed from the block's
@@ -285,6 +363,8 @@ class CustomBackend:
                         # confident slot so every pass makes progress instead
                         # of re-scoring an identical block
                         fill = [max(open_slots, key=lambda i: float(conf[i]))]
+                        fallback_commits += 1
+                fill_counts.append(len(fill))
                 for i in fill:
                     if int(tok[i]) == self.MASK_ID:
                         raise RuntimeError(
@@ -297,21 +377,32 @@ class CustomBackend:
                 block = block[:block.index(self.eos_id)]
                 out_ids.extend(block)
                 emitted += len(block)
+                stop_reason = "eos"
                 break
             if self.kv_cache:
                 # committed block becomes part of the cached prefix; the
                 # model reads the cache during denoising but only updates it
                 # here (set_cache_mode), same as stock generate()
                 self.cache_warm(block, len(out_ids))
+                warm_passes += 1
             out_ids.extend(block)
             emitted += len(block)
 
+        if self.device == "cuda":
+            torch.cuda.synchronize()
         decode_s = time.perf_counter() - t0
         text = self.tokenizer.decode(out_ids[len(prefix):],
                                      skip_special_tokens=True)
-        return Generation(text=text, num_tokens=max(emitted, 1),
+        return Generation(text=text, num_tokens=emitted,
                           decode_seconds=max(decode_s, 1e-6),
-                          passes=passes, blocks=blocks)
+                          prefill_seconds=prefill_s, passes=passes,
+                          prefill_kind=("timed_subwindow" if self.kv_cache
+                                        else "not_separable"),
+                          warm_passes=warm_passes, blocks=blocks,
+                          stop_reason=stop_reason,
+                          token_ids=out_ids[len(prefix):],
+                          fill_counts=fill_counts,
+                          fallback_commits=fallback_commits)
 
 
 def load_smoldlm(repo: str, block_size: int, steps: int, confidence: float,

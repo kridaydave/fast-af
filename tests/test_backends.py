@@ -101,14 +101,23 @@ def test_threshold_miss_commits_one_slot_per_pass():
     tok = RecordingTokenizer()
     backend = CustomBackend(block_size=8, steps=4, confidence=0.9,
                             score_fn=score_fn, tokenizer=tok, eos_id=EOS)
-    backend.generate("prompt", out_len=8)
+    g = backend.generate("prompt", out_len=8)
     assert [b.count(MASK) for b in blocks] == [8, 7, 6, 5]
     assert MASK not in tok.decoded
+    assert g.fill_counts == [1, 1, 1, 5]
+    assert g.fallback_commits == 3
 
 
 def test_steps_must_be_positive():
     with pytest.raises(ValueError, match="steps"):
         make_backend(lambda p: "high", steps=0)
+
+
+def test_block_size_must_be_positive():
+    with pytest.raises(ValueError, match="block_size"):
+        CustomBackend(block_size=0, steps=4, confidence=0.9,
+                      score_fn=lambda seq: None,
+                      tokenizer=RecordingTokenizer())
 
 
 def test_unpinned_scorer_raises_instead_of_committing_masks():
@@ -241,11 +250,13 @@ def test_kv_cache_routes_through_hooks_not_score_fn():
                             score_block=score_block)
     g = backend.generate("prompt", out_len=8)
     assert reset == [1]                      # one cache clear per generate
-    assert warm == [(PREFIX, 0),             # prefix warmed before timing
+    assert warm == [(PREFIX, 0),             # prefix warmed inside total timing
                     ((2, 3, 4, 5, 6, 7, 8, 9), 2)]  # committed block
     assert score == [((MASK,) * 8, 2)]       # one pass, block at pos 2
     assert tok.decoded == [2, 3, 4, 5, 6, 7, 8, 9]
     assert (g.passes, g.blocks) == (1, 1)
+    assert g.warm_passes == 2
+    assert g.stop_reason == "max_new_tokens"
 
 
 def test_kv_cache_positions_advance_across_blocks():
@@ -294,6 +305,13 @@ def test_negative_temperature_rejected():
         CustomBackend(block_size=8, steps=4, confidence=0.9,
                       score_fn=lambda seq: None, tokenizer=RecordingTokenizer(),
                       temperature=-0.1)
+
+
+def test_temperature_with_confidence_warns():
+    with pytest.warns(RuntimeWarning, match="commit='confidence'"):
+        CustomBackend(block_size=8, steps=4, confidence=0.9,
+                      score_fn=lambda seq: None,
+                      tokenizer=RecordingTokenizer(), temperature=0.7)
 
 
 def test_temperature_samples_and_still_commits():

@@ -92,19 +92,94 @@ def test_timed_gen_records_pass_accounting():
                        passes=4, blocks=1) for _ in range(3)]
     out = _timed_gen(StubBackend(gens), "p", out_len=8, runs=3)
     assert out["tokens_emitted"] == 24
-    assert out["passes"] == 4
-    assert out["blocks"] == 1
+    assert out["passes"] == 12
+    assert out["passes_per_run"] == [4, 4, 4]
+    assert out["blocks"] == 3
     assert out["tokens_per_pass"] == 2.0  # 24 tokens / 12 passes
 
 
-def test_timed_gen_omits_accounting_for_untracked_backends():
-    # AR/dllm backends leave passes=0; the row must not carry fake zeros
+def test_timed_gen_records_zero_accounting_for_untracked_backends():
+    # The result schema is stable across backends; AR/dllm report explicit 0s.
     from bench.backends import Generation
     from bench.run import _timed_gen
 
     gens = [Generation(text="t", num_tokens=8, decode_seconds=0.5)
             for _ in range(2)]
     out = _timed_gen(StubBackend(gens), "p", out_len=8, runs=2)
-    assert "passes" not in out
+    assert out["tokens_emitted"] == 16
+    assert out["passes"] == 0
     assert "tokens_per_pass" not in out
     assert out["median_tps"] > 0
+
+
+def test_timed_gen_uses_one_aggregation_basis():
+    from bench.backends import Generation
+    from bench.run import _timed_gen
+
+    gens = [Generation(text="a", num_tokens=8, decode_seconds=1, passes=4),
+            Generation(text="b", num_tokens=8, decode_seconds=1, passes=1)]
+    out = _timed_gen(StubBackend(gens), "p", out_len=8, runs=2)
+    assert out["tokens_emitted"] == 16
+    assert out["passes"] == 5
+    assert out["tokens_per_pass"] == 3.2
+
+
+def test_timed_gen_rejects_short_speed_rows():
+    from bench.backends import Generation
+    from bench.run import _timed_gen
+
+    gens = [Generation(text="short", num_tokens=4, decode_seconds=1,
+                       stop_reason="eos")]
+    import pytest
+    with pytest.raises(RuntimeError, match="exactly 8 output tokens"):
+        _timed_gen(StubBackend(gens), "p", out_len=8, runs=1)
+
+
+def test_comparisons_report_token_agreement_and_speed_ratio():
+    from bench.run import _comparisons
+
+    results = [
+        {"id": "base", "config": {},
+         "speed": {"sample_token_ids": [1, 2, 3], "median_tps": 10.0}},
+        {"id": "cached", "config": {"compare_to": "base",
+                                      "semantic_equivalence_claimed": False},
+         "speed": {"sample_token_ids": [1, 9, 3], "median_tps": 25.0}},
+    ]
+    comparison = _comparisons(results)[0]
+    assert comparison["exact_token_match"] is False
+    assert comparison["token_agreement"] == 0.666667
+    assert comparison["median_tps_ratio"] == 2.5
+    assert comparison["semantic_equivalence_claimed"] is False
+
+
+def test_run_persists_atomically_after_each_model(tmp_path, monkeypatch):
+    import importlib
+    import yaml
+    run_module = importlib.import_module("bench.run")
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(yaml.safe_dump({
+        "common": {"prompt_len": 8, "out_len": 8, "runs": 1,
+                   "batch": 1, "warmup": 0, "seed": 0,
+                   "dtype": "float32"},
+        "models": [{"id": "ok", "backend": "hf"},
+                   {"id": "bad", "backend": "hf"}],
+    }))
+    calls = []
+
+    def fake_run_model(model, common):
+        calls.append(model["id"])
+        if model["id"] == "bad":
+            raise RuntimeError("boom")
+        return {"id": "ok", "speed": {}}
+
+    monkeypatch.setattr(run_module, "run_model", fake_run_model)
+    monkeypatch.setattr(run_module, "_provenance", lambda path: {
+        "git_sha": "abc", "config_sha256": "hash"})
+    out_path = tmp_path / "results.yaml"
+    rows = run_module.run(str(cfg), str(out_path))
+    saved = yaml.safe_load(out_path.read_text())
+    assert calls == ["ok", "bad"]
+    assert rows[1]["error"] == "RuntimeError('boom')"
+    assert len(saved["results"]) == 2
+    assert not (tmp_path / "results.yaml.part").exists()

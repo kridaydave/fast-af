@@ -9,21 +9,25 @@ acknowledged. Roster lives in `bench/config.yaml`.
 
 ```bash
 # Colab T4 runtime: upload bootstrap_colab.sh, then
-BENCH_RUN=smoke bash bootstrap_colab.sh       # install deps, write bench/, smoke-run one model
+BENCH_REPO_DIR=/content/fast-af BENCH_RUN=none bash bootstrap_colab.sh
+cd /content/fast-af                           # bootstrap clones; it never rewrites bench/
 python -m bench --config bench/config.yaml --out results.yaml
 python -m bench --only smollm2-135m,qwen3.5-0.8b          # one model at a time
+python -m bench --only smoldlm-144m,smoldlm-144m-cached   # emits token-agreement + speed comparison
 ```
 
-Output `results.yaml`: per model `speed.{median_tps,min_tps,max_tps}` and,
-for AR models, `humaneval.pass@1`.
+Output `results.yaml`: machine provenance plus per-model configuration,
+speed/pass/cache-warm accounting, stop reasons, full baseline token IDs and,
+for AR models, HumanEval pass@1 with raw per-problem completions for re-scoring.
 
 ## Backends (`bench/backends.py`)
 
 | backend  | models | status |
 |---|---|---|
-| hf     | SmolLM2-135M, Qwen3.5-0.8B (+int4, +EAGLE-3), LFM2.5-350M | ready; EAGLE-3 spec-decode not auto-wired, runs as plain int4 AR |
-| dllm   | LLaDA-8B (default + Fast-dLLM) | dLLM `generate` is called natively; verify API vs installed dLLM |
-| custom | smoldlm-144m | ran on T4 (350 tok/s), but the loop is **uncached**; see KV cache below |
+| hf     | SmolLM2-135M, Qwen3.5-0.8B (+bnb int4), LFM2.5-350M | ready; speed runs force exactly 1,024 output tokens |
+| dllm   | LLaDA-8B native | preliminary; Fast-dLLM mode fails loudly until it is genuinely wired |
+| custom | smoldlm-144m cached + uncached policies | wired; legacy 350 tok/s row is uncached and lacks current accounting |
+| B2 | Qwen3.5-0.8B + DFlash2 | unavailable; harness refuses to label plain int4 as speculative decode |
 
 ## Honest caveats
 
@@ -40,7 +44,9 @@ for AR models, `humaneval.pass@1`.
 - Both tiers decode greedily (AR via `do_sample=False`, diffusion via argmax).
   smoldlm's card warns greedy text degenerates (repetition shows up in
   `sample_text`); it does not affect TPS.
-- EAGLE-3 (B2) is the known day-of-friction item on T4.
+- DFlash2 (B2) remains unwired and has no 0.8B drafter; it is explicitly unavailable.
+- TPS uses total model computation after host-side tokenization, including
+  AR prefill or diffusion cache warm. Prefill is also reported separately.
 
 ## KV cache: the 350 tok/s baseline is handicapped
 
@@ -51,11 +57,12 @@ prefix + block (1,056-2,048 tokens) instead of just the new tokens.
 
 - Estimated gain from enabling the cache only: **≥2x (700 tok/s conservative,
   ~1,200-1,800 central)**. Estimate, not measured.
-- **Wired (2026-11-11):** set `kv_cache: true` on the smoldlm config row.
+- **Wired (2026-11-11):** run the `smoldlm-144m-cached` config row.
   The loop then warms the prefix into the model's cache once and scores each
   denoising pass on the block alone at its absolute position, the same
-  read/write split stock `generate()` uses. Only this flag changes: steps,
-  temperature, and the decode contract stay put, so the cached row vs the
-  default row isolates the cache. Still unmeasured on T4 — the flag exists to
-  produce that measurement, and the ≥2x number stays an estimate until then.
+  read/write split stock `generate()` uses. This is not a pure cache-only A/B:
+  the legacy uncached full-sequence path lets the prefix attend to the masked
+  block, while the cached policy freezes the prefix. Report token agreement
+  alongside speed and treat the rows as two decode policies. Still unmeasured
+  on T4; the ≥2x number remains an estimate until then.
 - Source: `research/hillclimb-speed-reverify.md` (verdict + arithmetic).

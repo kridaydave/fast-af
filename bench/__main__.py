@@ -16,6 +16,10 @@ def main():
     if args.only:
         want = {x.strip() for x in args.only.split(",")}
         models = [m for m in cfg["models"] if m["id"] in want]
+        found = {m["id"] for m in models}
+        missing = sorted(want - found)
+        if missing:
+            ap.error("unknown model id(s): " + ", ".join(missing))
 
     run(args.config, args.out, models=models)
 
