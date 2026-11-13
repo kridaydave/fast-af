@@ -1,0 +1,12 @@
+{
+  "schema": "training-sources/v1",
+  "sources": [
+    {"bucket":"code","dataset_repo":"bigcode/the-stack-dedup","revision":"17cad72c886a2858e08d4c349a00d6466f54df63","license":"other; per-file permissive licenses retained from source","prefix":"data/python/","text_field":"content","min_text_bytes":280000000,"max_shards":3},
+    {"bucket":"web","dataset_repo":"HuggingFaceFW/fineweb-edu","revision":"87f09149ef4734204d70ed1d046ddc9ca3f2b8f9","license":"odc-by","prefix":"sample/10BT/","text_field":"text","min_text_bytes":220000000,"max_shards":1},
+    {"bucket":"math","dataset_repo":"HuggingFaceTB/finemath","revision":"e92b25a616738fe95dc186b64dfb19f9c8525594","license":"odc-by","prefix":"finemath-4plus/","text_field":"text","min_text_bytes":110000000,"max_shards":1}
+  ],
+  "benchmarks": {
+    "human_eval":{"dataset_repo":"openai/openai_humaneval","revision":"7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544","prefix":"openai_humaneval/","records":164},
+    "mbpp":{"dataset_repo":"google-research-datasets/mbpp","revision":"4bb6404fdc6cacfda99d4ac4205087b89d32030c","prefix":"full/","records":974}
+  }
+}
