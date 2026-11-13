@@ -35,7 +35,8 @@ SCHEMA = 'training-mixture/v1'
 MASK_ID = 0
 FORBIDDEN_IDS = (0, 2, 3, 4)  # MASK, PAD, UNK, BOS; EOS=1 is a legal target
 RESERVED_IDS = (0, 1, 2, 3, 4)  # MASK, EOS, PAD, UNK, BOS are never masked
-CHECKPOINT_VERSION = 2
+SPECIAL_IDS = {'[MASK]': 0, '[EOS]': 1, '[PAD]': 2, '[UNK]': 3, '[BOS]': 4}
+CHECKPOINT_VERSION = 3
 
 
 def load_manifest(bundle, verify_hashes=False):
@@ -50,8 +51,19 @@ def load_manifest(bundle, verify_hashes=False):
     meta['fingerprint'] = claimed
     if meta.get('dtype') != '<u2':
         raise ValueError(f"unsupported shard dtype {meta.get('dtype')!r}")
+    if type(meta.get('seq_len')) is not int or meta['seq_len'] < 1:
+        raise ValueError('seq_len must be a positive integer')
+    if meta.get('special_ids') != SPECIAL_IDS:
+        raise ValueError('unsupported special token IDs in bundle manifest')
     for split, info in meta['splits'].items():
+        if not info['shards']:
+            raise ValueError(f'split {split!r} has no shards')
         for shard in info['shards']:
+            if (type(shard.get('tokens')) is not int or shard['tokens'] <= 0
+                    or shard['tokens'] % meta['seq_len']):
+                raise ValueError('shard tokens must be positive whole sequences')
+            if shard.get('sequences') != shard['tokens'] // meta['seq_len']:
+                raise ValueError('shard sequence count mismatch')
             path = bundle / shard['path']
             if not path.exists():
                 raise ValueError(f'missing shard {path}')
@@ -59,6 +71,9 @@ def load_manifest(bundle, verify_hashes=False):
                 raise ValueError(f'shard size mismatch: {path}')
             if verify_hashes and filehash(path) != shard['sha256']:
                 raise ValueError(f'shard hash mismatch: {path}')
+        if (info.get('tokens') != sum(s['tokens'] for s in info['shards'])
+                or info.get('sequences') != sum(s['sequences'] for s in info['shards'])):
+            raise ValueError(f'split {split!r} totals mismatch')
     return meta
 
 
@@ -71,8 +86,10 @@ def bundle_vocab(bundle):
     claimed = info.pop('fingerprint', None)
     if claimed != digest(canonical(info).encode()):
         raise ValueError('tokenizer manifest fingerprint mismatch')
+    if info.get('schema') != 'tokenizer/v1' or info.get('special_ids') != SPECIAL_IDS:
+        raise ValueError('unsupported tokenizer schema or special token IDs')
     size = info.get('vocab_size')
-    if not isinstance(size, int) or size < 2:
+    if type(size) is not int or not 5 < size <= 65536:
         raise ValueError(f'invalid vocab_size in {path}')
     return size
 
@@ -95,6 +112,8 @@ def bundle_provenance(bundle, meta):
         raise ValueError('tokenizer manifest hash mismatch')
     tokenizer_path = bundle / 'tokenizer.json'
     actual_tokenizer_model = None
+    if meta.get('tokenizer_sha256') is not None and not tokenizer_path.is_file():
+        raise ValueError('missing tokenizer model declared by manifest')
     if tokenizer_path.exists():
         actual_tokenizer_model = filehash(tokenizer_path)
         if meta.get('tokenizer_sha256') is not None and meta['tokenizer_sha256'] != actual_tokenizer_model:
@@ -176,11 +195,26 @@ class ShardLoader:
                 raise ValueError('loader sequence must be 0 at end of epoch')
         else:
             rows = self.shards[self._permutation(epoch)[position]][1]
-            if sequence > rows:
-                raise ValueError(f'loader sequence out of range: {sequence} > {rows}')
+            if sequence >= rows or sequence % self.batch_size:
+                raise ValueError(f'loader sequence out of range or not at batch boundary: {sequence}')
         self.epoch, self.position, self.sequence = epoch, position, sequence
         self._order = self._permutation(self.epoch)
         self._memmap, self._memmap_path = None, None
+
+    def validate_progress(self, step, grad_accum, tokens_seen):
+        """Bind the cursor to exactly the consumed micro-batches and tokens."""
+        if type(step) is not int or step < 1 or type(tokens_seen) is not int:
+            raise ValueError('checkpoint step and tokens_seen must be positive integers')
+        rows = [self.shards[i][1] for i in self._order]
+        batches = [(n + self.batch_size - 1) // self.batch_size for n in rows]
+        consumed_batches = (self.epoch * sum(batches) + sum(batches[:self.position])
+                            + self.sequence // self.batch_size)
+        consumed_tokens = (self.epoch * sum(rows) + sum(rows[:self.position])
+                           + self.sequence) * self.seq_len
+        if tokens_seen != consumed_tokens:
+            raise ValueError('checkpoint tokens_seen inconsistent with loader cursor')
+        if consumed_batches != step * grad_accum:
+            raise ValueError('checkpoint loader cursor inconsistent with step and grad_accum')
 
     def __next__(self):
         while True:
@@ -342,6 +376,9 @@ def config_hash_of(cfg):
 
 
 def _validate(cfg):
+    for name in ('lr', 'grad_clip', 'weight_decay', 'eps'):
+        if not math.isfinite(getattr(cfg, name)):
+            raise ValueError(f'{name} must be finite')
     for name in ('steps', 'batch_size', 'grad_accum', 'checkpoint_every', 'threads',
                  'd_model', 'n_layers', 'n_heads', 'mlp_ratio', 'eval_batches'):
         if getattr(cfg, name) < 1:
@@ -399,7 +436,9 @@ def lr_at(step, cfg):
     """Linear warmup then cosine decay to 10% of the peak learning rate."""
     if step < cfg.warmup:
         return cfg.lr * (step + 1) / cfg.warmup
-    t = (step - cfg.warmup) / max(1, cfg.steps - cfg.warmup)
+    decay_steps = cfg.steps - cfg.warmup
+    t = ((step - cfg.warmup) / max(1, decay_steps - 1)
+         if decay_steps > 1 or cfg.steps == 1 else 1.0)
     return cfg.lr * (0.1 + 0.9 * 0.5 * (1.0 + math.cos(math.pi * min(t, 1.0))))
 
 
@@ -427,6 +466,24 @@ def build_model(cfg, vocab, seq_len):
         raise NotImplementedError(
             'D1 architecture is not implemented; refusing to run P1 with the smoke model')
     return DiffusionLM(vocab, seq_len, cfg.d_model, cfg.n_layers, cfg.n_heads, cfg.mlp_ratio)
+
+
+def optimizer_step(model, optimizer, scheduler, scaler, grad_clip):
+    """Clip unscaled gradients; skip AMP overflow without advancing the schedule."""
+    if scaler.is_enabled():
+        scaler.unscale_(optimizer)
+    grad_norm = torch.nn.utils.clip_grad_norm_(
+        model.parameters(), grad_clip, error_if_nonfinite=not scaler.is_enabled())
+    skipped = not math.isfinite(float(grad_norm))
+    if skipped:
+        # The norm reduction can overflow even when individual gradients are finite.
+        # Do not let GradScaler's per-element check apply the clipped NaNs then.
+        scaler.update(new_scale=scaler.get_scale() * scaler.get_backoff_factor())
+    else:
+        scaler.step(optimizer)
+        scaler.update()
+        scheduler.step()
+    return float(grad_norm), skipped
 
 
 def library_versions():
@@ -582,11 +639,7 @@ def train(cfg, resume=None, log=print):
         scaler.load_state_dict(payload['scaler'])
         loader.load_state_dict(payload['loader'])
         step, tokens_seen = payload['step'], payload['tokens_seen']
-        global_tokens = cfg.batch_size * cfg.grad_accum * seq_len
-        if tokens_seen <= 0 or tokens_seen % seq_len or tokens_seen > step * global_tokens:
-            raise ValueError(
-                f'checkpoint tokens_seen inconsistent with step and global batch: '
-                f'{tokens_seen} vs step {step}, max {step * global_tokens}')
+        loader.validate_progress(step, cfg.grad_accum, tokens_seen)
         restore_rng(payload)
         log(f'resumed {resume} at step {step} tokens {tokens_seen}')
     if step >= cfg.steps:
@@ -620,25 +673,22 @@ def train(cfg, resume=None, log=print):
                     loss = masked_cross_entropy(model(inputs), targets, loss_mask)
             else:
                 loss = masked_cross_entropy(model(inputs), targets, loss_mask)
+            if not bool(torch.isfinite(loss)):
+                raise FloatingPointError(f'non-finite loss at step {step + 1}')
             weighted = loss.float() * (masked / masked_total)
             scaler.scale(weighted).backward()
             loss_sum += float(loss.detach()) * masked
-        if cfg.amp:
-            scaler.unscale_(optimizer)
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
-        if cfg.amp:
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            optimizer.step()
-        scheduler.step()
+        lr_used = optimizer.param_groups[0]['lr']
+        grad_norm, skipped = optimizer_step(model, optimizer, scheduler, scaler, cfg.grad_clip)
         loss = loss_sum / masked_total
         if not math.isfinite(loss):
             raise FloatingPointError(f'non-finite loss at step {step + 1}')
         step += 1
         tokens_seen += token_total
-        record = {'step': step, 'loss': loss, 'lr': scheduler.get_last_lr()[0],
-                  'tokens_seen': tokens_seen, 'grad_norm': float(grad_norm)}
+        record = {'step': step, 'loss': loss, 'lr': lr_used,
+                  'tokens_seen': tokens_seen, 'grad_norm': grad_norm if not skipped else None,
+                  'optimizer_steps': scheduler.last_epoch,
+                  'optimizer_step_skipped': skipped}
         if cfg.eval_every and step % cfg.eval_every == 0:
             record['val_loss'] = evaluate(cfg, model, vocab, seq_len,
                                           batches=None if cfg.eval_full else cfg.eval_batches,

@@ -316,3 +316,193 @@ def test_real_training_v1_bundle_loads_and_scores():
     assert loss_mask.any()
     loss = masked_cross_entropy(DiffusionLM(vocab, 1024)(inputs), targets, loss_mask)
     assert torch.isfinite(loss) and loss > 0
+
+
+@pytest.mark.parametrize('tokens', [0, 1, -8])
+def test_rejects_invalid_shard_dimensions(tmp_path, tokens):
+    root = make_bundle(tmp_path)
+    path = root / 'manifest.json'
+    meta = json.loads(path.read_text())
+    meta.pop('fingerprint')
+    meta['splits']['train']['shards'][0]['tokens'] = tokens
+    write_manifest(path, meta)
+    with pytest.raises(ValueError, match='whole sequences'):
+        load_manifest(root)
+
+
+@pytest.mark.parametrize('seq_len', [0, -8, True, 1.5])
+def test_rejects_invalid_sequence_length(tmp_path, seq_len):
+    root = make_bundle(tmp_path)
+    path = root / 'manifest.json'
+    meta = json.loads(path.read_text())
+    meta.pop('fingerprint')
+    meta['seq_len'] = seq_len
+    write_manifest(path, meta)
+    with pytest.raises(ValueError, match='seq_len must be a positive integer'):
+        load_manifest(root)
+
+
+def test_manifest_checks_counts_and_missing_tokenizer(tmp_path):
+    root = make_bundle(tmp_path)
+    path = root / 'manifest.json'
+    original = json.loads(path.read_text())
+    for field in ('sequences', 'tokens'):
+        meta = json.loads(json.dumps(original))
+        meta.pop('fingerprint')
+        meta['splits']['train'][field] += 1
+        write_manifest(path, meta)
+        with pytest.raises(ValueError, match='totals mismatch'):
+            load_manifest(root)
+    path.write_text(json.dumps(original))
+    (root / 'tokenizer.json').unlink()
+    with pytest.raises(ValueError, match='missing tokenizer model'):
+        bundle_provenance(root, load_manifest(root))
+
+
+def test_resume_with_partial_batches_and_accumulation(tmp_path):
+    from dataclasses import replace
+
+    root = make_bundle(tmp_path)
+    cfg = TrainConfig(bundle=str(root), out=str(tmp_path / 'full'), steps=15,
+                      warmup=2, batch_size=6, grad_accum=3, checkpoint_every=5,
+                      eval_every=5, eval_full=True)
+    full = train(cfg, log=lambda *a: None)
+    ckpt = tmp_path / 'full' / 'checkpoint-000005.pt'
+    resumed = train(replace(cfg, out=str(tmp_path / 'resumed')), resume=ckpt, log=lambda *a: None)
+    assert resumed['losses'] == full['losses'][5:]
+    a = load_checkpoint(tmp_path / 'full' / 'checkpoint-000015.pt')
+    b = load_checkpoint(tmp_path / 'resumed' / 'checkpoint-000015.pt')
+    assert a['loader'] == b['loader'] and a['scheduler'] == b['scheduler']
+    assert a['tokens_seen'] == b['tokens_seen'] == 3 * 640
+    assert all(torch.equal(a['model'][k], b['model'][k]) for k in a['model'])
+    assert torch.equal(a['rng']['torch'], b['rng']['torch'])
+
+    for field, value, message in [('tokens_seen', a['tokens_seen'] - SEQ, 'tokens_seen inconsistent'),
+                                  ('step', 14, 'cursor inconsistent')]:
+        damaged = dict(a, **{field: value})
+        save_checkpoint(tmp_path / 'damaged.pt', damaged)
+        with pytest.raises(ValueError, match=message):
+            train(cfg, resume=tmp_path / 'damaged.pt', log=lambda *a: None)
+    damaged = load_checkpoint(ckpt)
+    damaged['loader']['sequence'] = 1
+    damaged['loader']['position'] = 0
+    save_checkpoint(tmp_path / 'damaged.pt', damaged)
+    with pytest.raises(ValueError, match='batch boundary'):
+        train(cfg, resume=tmp_path / 'damaged.pt', log=lambda *a: None)
+
+
+@pytest.mark.parametrize('failure', ['loss', 'gradient'])
+def test_nonfinite_training_aborts_before_updating_weights(tmp_path, monkeypatch, failure):
+    import scripts.train_diffusion as training
+
+    root = make_bundle(tmp_path)
+    model = DiffusionLM(VOCAB, SEQ)
+    initial = {name: value.clone() for name, value in model.state_dict().items()}
+    if failure == 'loss':
+        model.register_forward_hook(lambda module, args, output: output * float('nan'))
+    else:
+        model.tokens.weight.register_hook(lambda grad: grad * float('inf'))
+    monkeypatch.setattr(training, 'build_model', lambda *args: model)
+    cfg = TrainConfig(bundle=str(root), out=str(tmp_path / 'run'), steps=2, warmup=0)
+    with pytest.raises((FloatingPointError, RuntimeError), match='non-finite'):
+        train(cfg, log=lambda *a: None)
+    assert all(torch.equal(model.state_dict()[name], value) for name, value in initial.items())
+    assert not list((tmp_path / 'run').glob('checkpoint-*'))
+
+
+def test_cpu_grad_scaler_overflow_skips_update_and_recovers():
+    # Exercises the real scaler on CPU; this is not CUDA/fp16 validation.
+    from scripts.train_diffusion import optimizer_step
+
+    model = torch.nn.Linear(2, 1, bias=False)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
+    scaler = torch.amp.GradScaler('cpu', init_scale=8.0)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
+    initial = model.weight.detach().clone()
+    for value in (float('inf'), 1e30):
+        optimizer.zero_grad(set_to_none=True)
+        scaler.scale(model(torch.ones(1, 2)).sum()).backward()
+        model.weight.grad.fill_(value)
+        old_scale = scaler.get_scale()
+        norm, skipped = optimizer_step(model, optimizer, scheduler, scaler, 1.0)
+        assert skipped and not math.isfinite(norm)
+        assert scaler.get_scale() == old_scale * scaler.get_backoff_factor()
+        assert torch.equal(model.weight, initial)
+        assert not optimizer.state
+        assert scheduler.last_epoch == 0
+    optimizer.zero_grad(set_to_none=True)
+    scaler.scale(model(torch.ones(1, 2)).sum()).backward()
+    norm, skipped = optimizer_step(model, optimizer, scheduler, scaler, 1.0)
+    assert not skipped and math.isfinite(norm)
+    assert scheduler.last_epoch == 1
+    assert not torch.equal(model.weight, initial)
+    assert all(torch.isfinite(p).all() for p in model.parameters())
+
+
+def test_schedule_logs_lr_used_and_reaches_minimum(tmp_path):
+    root = make_bundle(tmp_path)
+    cfg = TrainConfig(bundle=str(root), out=str(tmp_path / 'run'), steps=4, warmup=1,
+                      eval_every=0, checkpoint_every=4)
+    records = []
+    train(cfg, log=lambda line: records.append(json.loads(line)))
+    assert records[0]['lr'] == cfg.lr
+    assert records[-1]['lr'] == pytest.approx(cfg.lr * 0.1)
+    assert not any(r['optimizer_step_skipped'] for r in records)
+
+
+@pytest.mark.parametrize('name', ['lr', 'weight_decay', 'eps', 'grad_clip'])
+@pytest.mark.parametrize('value', [float('nan'), float('inf')])
+def test_rejects_nonfinite_hyperparameters(tmp_path, name, value):
+    cfg = TrainConfig(bundle='unused', out=str(tmp_path), **{name: value})
+    with pytest.raises(ValueError, match=f'{name} must be finite'):
+        train(cfg)
+
+
+@pytest.mark.parametrize('manifest_name', ['manifest.json', 'tokenizer_manifest.json'])
+def test_rejects_incompatible_special_token_ids(tmp_path, manifest_name):
+    from scripts.train_diffusion import bundle_vocab
+
+    root = make_bundle(tmp_path)
+    path = root / manifest_name
+    meta = json.loads(path.read_text())
+    meta.pop('fingerprint')
+    meta['special_ids']['[EOS]'] = 7
+    write_manifest(path, meta)
+    with pytest.raises(ValueError, match='special token IDs'):
+        (load_manifest if manifest_name == 'manifest.json' else bundle_vocab)(root)
+
+
+def test_accumulation_matches_one_token_weighted_partial_global_batch(tmp_path):
+    root = make_bundle(tmp_path, shard_sequences=4)
+    cfg = TrainConfig(bundle=str(root), out=str(tmp_path / 'run'), steps=1, warmup=0,
+                      batch_size=3, grad_accum=2, d_model=16, n_layers=1, n_heads=2,
+                      eval_every=0, seed=23)
+    torch.manual_seed(cfg.seed)
+    reference = build_model(cfg, VOCAB, SEQ)
+    optimizer = build_optimizer(reference, cfg)
+    batches = ShardLoader(root, batch_size=cfg.batch_size, seed=cfg.seed, vocab=VOCAB)
+    inputs, targets, masks = [], [], []
+    for _ in range(cfg.grad_accum):
+        target = next(batches)
+        masked_input, mask = diffusion_mask(target)
+        inputs.append(masked_input)
+        targets.append(target)
+        masks.append(mask)
+    assert [len(t) for t in targets] == [3, 1]
+    loss = masked_cross_entropy(reference(torch.cat(inputs)), torch.cat(targets), torch.cat(masks))
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(reference.parameters(), cfg.grad_clip, error_if_nonfinite=True)
+    optimizer.step()
+    train(cfg, log=lambda *a: None)
+    actual = load_checkpoint(tmp_path / 'run' / 'checkpoint-000001.pt')
+    assert actual['tokens_seen'] == 4 * SEQ
+    for name, param in reference.state_dict().items():
+        torch.testing.assert_close(actual['model'][name], param, rtol=1e-4, atol=1e-5)
+
+
+@pytest.mark.parametrize('steps,warmup', [(1, 0), (4, 0), (4, 3)])
+def test_short_schedule_endpoints(steps, warmup):
+    from scripts.train_diffusion import lr_at
+
+    cfg = TrainConfig(bundle='unused', out='unused', steps=steps, warmup=warmup)
+    assert lr_at(steps - 1, cfg) == pytest.approx(cfg.lr * (1.0 if steps == 1 else 0.1))
