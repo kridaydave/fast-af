@@ -3,7 +3,9 @@
 CPU training-data tools: [prepare and pack local corpus samples](docs/DATA_PIPELINE.md)
 and [train a reproducible byte-level BPE tokenizer](docs/TOKENIZER.md).
 The [actual training-data workflow](docs/TRAINING_DATA.md) fetches pinned sources,
-filters the full benchmark sets, and enforces the token mixture.
+filters the full benchmark sets, and enforces the token mixture. The
+[minimal training loop](docs/TRAINING_LOOP.md) trains and resumes a small
+diffusion model on that packed bundle.
 
 Measures TPS (tokens/s) and HumanEval pass@1 for the D1 roster on a free T4
 (batch 1, 1k in / 1k out, median of 5 timed runs). D1 is 100M; baselines are
