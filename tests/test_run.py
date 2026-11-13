@@ -183,3 +183,104 @@ def test_run_persists_atomically_after_each_model(tmp_path, monkeypatch):
     assert rows[1]["error"] == "RuntimeError('boom')"
     assert len(saved["results"]) == 2
     assert not (tmp_path / "results.yaml.part").exists()
+
+
+# ---- evaluation protocol wiring ----
+
+def test_humaneval_spec_requires_an_explicit_mode():
+    from bench.run import _humaneval_spec
+
+    common = {"humaneval": True, "humaneval_n": 50}
+    assert _humaneval_spec({"humaneval": False, "eval_prompt": "chat"},
+                           common) is None
+    assert _humaneval_spec({"humaneval": True, "eval_prompt": "completion"},
+                           common) == {"mode": "completion", "n": 50}
+    assert _humaneval_spec({"humaneval": True, "eval_prompt": "chat",
+                            "humaneval_n": 164}, common) == {
+        "mode": "chat", "n": 164}
+
+    import pytest
+    with pytest.raises(ValueError, match="explicit eval_prompt"):
+        _humaneval_spec({"id": "m", "humaneval": True}, common)
+    with pytest.raises(ValueError, match="explicit eval_prompt"):
+        _humaneval_spec({"id": "m", "humaneval": True,
+                         "eval_prompt": "instruct"}, common)
+    with pytest.raises(ValueError, match="1..164"):
+        _humaneval_spec({"id": "m", "humaneval": True,
+                         "eval_prompt": "completion",
+                         "humaneval_n": 165}, common)
+
+
+def test_run_model_uses_the_configured_chat_protocol(monkeypatch):
+    import importlib
+    run_module = importlib.import_module("bench.run")
+    from bench.backends import Generation, TransformersBackend
+    from bench.humaneval import CHAT_INSTRUCTION, build_protocol
+
+    class ChatTokenizer:
+        chat_template = "fake"
+
+        def encode(self, text):
+            return [ord(c) for c in text]
+
+        def decode(self, ids):
+            return "".join(chr(i) for i in ids)
+
+        def apply_chat_template(self, messages, tokenize=False,
+                                add_generation_prompt=True):
+            return "<chat>" + messages[-1]["content"]
+
+    class FakeHF(TransformersBackend):
+        def __init__(self):
+            self.tokenizer = ChatTokenizer()
+            self.prompts = []
+
+        def warmup(self):
+            pass
+
+        def generate(self, prompt, out_len, force_length=True, add_special_tokens=True):
+            self.special_tokens = add_special_tokens
+            self.prompts.append((prompt, out_len, force_length))
+            return Generation(text="```python\ndef f():\n    return 1\n```",
+                              num_tokens=out_len, decode_seconds=0.1)
+
+    captured = {}
+
+    def fake_run_humaneval(gen_fn, prompts, mode, **kwargs):
+        captured["prompts"] = prompts
+        captured["mode"] = mode
+        assert kwargs["protocol"]["tokenizer_chat_template_sha256"]
+        captured["generated"] = gen_fn("PROBLEM")
+        return {"n": prompts, "passed": 0, "pass@1": 0.0,
+                "protocol": build_protocol(mode), "cases": []}
+
+    backend = FakeHF()
+    monkeypatch.setattr(run_module, "_build_backend", lambda m, common: backend)
+    monkeypatch.setattr(run_module, "run_humaneval", fake_run_humaneval)
+    monkeypatch.setattr(run_module, "_git", lambda *args: "sha")
+
+    model = {"id": "chat-model", "backend": "hf", "repo": "x",
+             "humaneval": True, "eval_prompt": "chat", "humaneval_n": 7}
+    common = {"prompt_len": 4, "out_len": 4, "runs": 1, "batch": 1,
+              "warmup": 0, "seed": 0, "dtype": "float32",
+              "humaneval": True, "humaneval_n": 50}
+
+    result = run_module.run_model(model, common)
+    assert captured == {"prompts": 7, "mode": "chat",
+                        "generated": "```python\ndef f():\n    return 1\n```"}
+    assert backend.special_tokens is False
+    assert CHAT_INSTRUCTION in backend.prompts[-1][0]
+    # eval generation is not forced to the speed contract's exact length
+    assert backend.prompts[-1][1:] == (256, False)
+    assert result["humaneval"]["protocol"]["mode"] == "chat"
+
+
+def test_validate_common_checks_humaneval_n():
+    import pytest
+    from bench.run import _validate_common
+
+    _validate_common({"batch": 1, "prompt_len": 1, "out_len": 1, "runs": 1,
+                      "humaneval_n": 164})
+    with pytest.raises(ValueError, match="humaneval_n"):
+        _validate_common({"batch": 1, "prompt_len": 1, "out_len": 1, "runs": 1,
+                          "humaneval_n": 165})

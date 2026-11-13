@@ -332,3 +332,132 @@ def test_temperature_samples_and_still_commits():
     assert g.num_tokens == 8
     assert MASK not in tok.decoded
     assert (g.passes, g.blocks) == (4, 1)  # k0 = 2 per pass, 8 slots
+
+
+# ---- evaluation-only TransformersBackend path (no model download) ----
+
+def _fake_transformers_backend(tokenizer):
+    """Build a TransformersBackend without __init__ (no model download)."""
+    from bench.backends import TransformersBackend
+    backend = object.__new__(TransformersBackend)
+    backend.tokenizer = tokenizer
+    return backend
+
+
+class ChatTokenizer:
+    chat_template = "fake-template"
+
+    def apply_chat_template(self, messages, tokenize=False,
+                            add_generation_prompt=True):
+        assert tokenize is False
+        assert add_generation_prompt is True
+        self.messages = messages
+        return "<rendered>" + messages[-1]["content"]
+
+
+def test_build_eval_prompt_completion_is_the_raw_prompt():
+    backend = _fake_transformers_backend(None)
+    prompt = "def add(a, b):\n"
+    assert backend.build_eval_prompt(prompt, "completion") == prompt
+
+
+def test_build_eval_prompt_chat_uses_the_fixed_instruction():
+    from bench.humaneval import CHAT_INSTRUCTION
+    tokenizer = ChatTokenizer()
+    backend = _fake_transformers_backend(tokenizer)
+    prompt = "def add(a, b):\n"
+    rendered = backend.build_eval_prompt(prompt, "chat")
+    assert rendered == "<rendered>" + prompt + "\n\n" + CHAT_INSTRUCTION
+    assert tokenizer.messages[0]["role"] == "system"
+    assert tokenizer.messages[1]["role"] == "user"
+    assert tokenizer.messages[1]["content"] == prompt + "\n\n" + CHAT_INSTRUCTION
+
+
+def test_build_eval_prompt_rejects_unknown_mode():
+    backend = _fake_transformers_backend(None)
+    import pytest
+    with pytest.raises(ValueError, match="eval prompt mode"):
+        backend.build_eval_prompt("x", "chat-ish")
+
+
+def test_build_eval_prompt_chat_requires_a_chat_template():
+    class NoChatTemplate:
+        pass
+
+    backend = _fake_transformers_backend(NoChatTemplate())
+    import pytest
+    with pytest.raises(ValueError, match="chat template"):
+        backend.build_eval_prompt("x", "chat")
+
+
+def test_generate_eval_uses_unbounded_decode():
+    backend = _fake_transformers_backend(None)
+    seen = {}
+
+    def fake_generate(prompt, out_len, force_length=True):
+        from bench.backends import Generation
+        seen.update(prompt=prompt, out_len=out_len,
+                    force_length=force_length)
+        return Generation(text="ok", num_tokens=1, decode_seconds=0.1)
+
+    backend.generate = fake_generate
+    g = backend.generate_eval("prompt", "completion", max_new_tokens=12)
+    assert g.text == "ok"
+    assert seen == {"prompt": "prompt", "out_len": 12, "force_length": False}
+
+
+def test_chat_eval_disables_duplicate_special_tokens_and_records_template_hash():
+    from bench.backends import Generation
+    import hashlib
+    tok = ChatTokenizer()
+    backend = _fake_transformers_backend(tok)
+    seen = {}
+
+    def generate(prompt, out_len, **kwargs):
+        seen.update(kwargs)
+        return Generation(text='ok', num_tokens=1, decode_seconds=.1)
+
+    backend.generate = generate
+    backend.generate_eval('problem', 'chat')
+    assert seen == {'force_length': False, 'add_special_tokens': False}
+    first = backend.evaluation_protocol('chat')
+    assert first['tokenizer_chat_template_sha256'] == hashlib.sha256(b'fake-template').hexdigest()
+    tok.chat_template = 'different-template'
+    second = backend.evaluation_protocol('chat')
+    assert first['protocol_sha256'] != second['protocol_sha256']
+
+
+def test_chat_generation_tokenizes_rendered_prompt_without_extra_bos():
+    from bench.backends import TransformersBackend
+    import torch
+
+    class Encoding(dict):
+        def to(self, device):
+            return self
+
+    class Tok(ChatTokenizer):
+        pad_token_id = 1
+
+        def __call__(self, text, **kwargs):
+            self.tokenize_kwargs = kwargs
+            ids = [1, 5] if kwargs.get('add_special_tokens') is False else [1, 1, 5]
+            return Encoding(input_ids=torch.tensor([ids]))
+
+        def decode(self, ids, **kwargs):
+            return 'answer'
+
+    class Model:
+        def __call__(self, **kwargs):
+            return None
+
+        def generate(self, **kwargs):
+            self.input_ids = kwargs['input_ids']
+            return torch.cat([self.input_ids, torch.tensor([[7]])], dim=1)
+
+    backend = _fake_transformers_backend(Tok())
+    backend.model, backend.device = Model(), 'cpu'
+    backend.generate_eval('task', 'chat', max_new_tokens=4)
+    assert backend.model.input_ids.tolist() == [[1, 5]]
+    assert backend.tokenizer.tokenize_kwargs['add_special_tokens'] is False
+    backend.generate('speed task', 1)
+    assert 'add_special_tokens' not in backend.tokenizer.tokenize_kwargs

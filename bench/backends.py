@@ -86,11 +86,15 @@ class TransformersBackend:
         self.generate("the quick brown fox", 8)
 
     def generate(self, prompt: str, out_len: int,
-                 force_length: bool = True) -> Generation:
+                 force_length: bool = True,
+                 add_special_tokens: bool = True) -> Generation:
         import torch
         if out_len < 1:
             raise ValueError(f"out_len must be >= 1, got {out_len}")
-        enc = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        tokenize_kw = {"return_tensors": "pt"}
+        if not add_special_tokens:
+            tokenize_kw["add_special_tokens"] = False
+        enc = self.tokenizer(prompt, **tokenize_kw).to(self.device)
         plen = enc["input_ids"].shape[1]
         if self.device == "cuda":
             torch.cuda.synchronize()
@@ -124,6 +128,66 @@ class TransformersBackend:
                           prefill_seconds=max(prefill_s, 1e-6),
                           prefill_kind="standalone_probe",
                           stop_reason=stop_reason, token_ids=token_ids)
+
+    # ---- evaluation-only path ------------------------------------------------
+    # Speed generation above is deliberately untouched: eval must not change
+    # the timed decode window, forced output length, or tokenizer call.
+
+    def build_eval_prompt(self, prompt: str, mode: str) -> str:
+        """Build the exact text fed to the model for an eval run.
+
+        ``completion`` returns the raw HumanEval prompt. ``chat`` applies the
+        tokenizer's chat template to a fixed instruction; the instruction is
+        model-agnostic and lives in ``bench.humaneval`` so it can be hashed
+        and recorded. No model-id or repo-name guessing happens here.
+        """
+        from .humaneval import EVAL_MODES, chat_messages
+
+        if mode == "completion":
+            return prompt
+        if mode == "chat":
+            if not getattr(self.tokenizer, "chat_template", None):
+                raise ValueError(
+                    "chat evaluation requires a tokenizer with a chat "
+                    "template; set eval_prompt: completion instead")
+            return self.tokenizer.apply_chat_template(
+                chat_messages(prompt), tokenize=False,
+                add_generation_prompt=True)
+        raise ValueError(
+            f"eval prompt mode must be one of {EVAL_MODES}, got {mode!r}")
+
+    def generate_eval(self, prompt: str, mode: str,
+                      max_new_tokens: int = 256) -> Generation:
+        """Generate an eval completion without forcing a fixed token count."""
+        kwargs = {"force_length": False}
+        if mode == "chat":
+            kwargs["add_special_tokens"] = False
+        return self.generate(self.build_eval_prompt(prompt, mode),
+                             max_new_tokens, **kwargs)
+
+    def evaluation_protocol(self, mode: str) -> dict:
+        """Validate formatting and retain the effective tokenizer template."""
+        import hashlib
+        import json
+        from .humaneval import build_protocol
+
+        protocol = build_protocol(mode)
+        if mode == "chat":
+            self.build_eval_prompt("", mode)
+            get_template = getattr(self.tokenizer, "get_chat_template", None)
+            template = (get_template() if callable(get_template)
+                        else self.tokenizer.chat_template)
+            serialized = (template if isinstance(template, str)
+                          else json.dumps(template, sort_keys=True))
+            protocol["tokenizer_chat_template"] = template
+            protocol["tokenizer_chat_template_sha256"] = hashlib.sha256(
+                serialized.encode("utf-8")).hexdigest()
+        protocol["generation"] = {"max_new_tokens": 256, "do_sample": False,
+                                   "force_length": False,
+                                   "add_special_tokens": mode != "chat"}
+        protocol["protocol_sha256"] = hashlib.sha256(json.dumps(
+            protocol, sort_keys=True).encode("utf-8")).hexdigest()
+        return protocol
 
 
 class DllmBackend:

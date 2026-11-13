@@ -24,6 +24,9 @@ python -m bench --only smoldlm-144m,smoldlm-144m-cached   # emits token-agreemen
 Output `results.yaml`: machine provenance plus per-model configuration,
 speed/pass/cache-warm accounting, stop reasons, full baseline token IDs and,
 for AR models, HumanEval pass@1 with raw per-problem completions for re-scoring.
+Every HumanEval row records its prompt mode, fixed template text/hash, and
+extraction-policy version. See [the evaluation protocol](docs/EVALUATION_PROTOCOL.md)
+for the completion vs chat modes, extraction policy, and G0 calibration rules.
 
 For the historical G1 sampler gate, use the [baseline capture and comparison
 commands](bench/BENCHMARK_WEEK.md#g1-historical-sampler-regression). These freeze
@@ -57,6 +60,9 @@ model assets and a strict offline 99% agreement check.
 - DFlash2 (B2) remains unwired and has no 0.8B drafter; it is explicitly unavailable.
 - TPS uses total model computation after host-side tokenization, including
   AR prefill or diffusion cache warm. Prefill is also reported separately.
+- Historical `results_t4*.yaml` HumanEval rows are completion-protocol,
+  50-problem runs. They are not valid quality evidence for the chat protocol,
+  and no fixed accuracy is claimed from them until a new calibrated run exists.
 
 ## KV cache: the 350 tok/s baseline is handicapped
 

@@ -14,7 +14,8 @@ from pathlib import Path
 
 from .backends import (TransformersBackend, DllmBackend, Generation,
                        load_smoldlm)
-from .humaneval import run_humaneval
+from .humaneval import (DEFAULT_HUMANEVAL_N, EVAL_MODES, MAX_HUMANEVAL,
+                        build_protocol, run_humaneval)
 
 # Prompts for the speed harness: coding-style, batch 1, out_len tokens each.
 _SPEED_PROMPTS = [
@@ -132,6 +133,29 @@ def _build_backend(m: dict, common: dict):
     raise ValueError(f"unknown backend: {b}")
 
 
+def _humaneval_spec(m: dict, common: dict) -> dict | None:
+    """Resolve the eval protocol for a model, or None when eval is off.
+
+    The prompt mode is explicit per model. Inferring it from a repo name
+    (for example "Instruct") would silently mix protocols and make scores
+    unauditable, so a missing or invalid ``eval_prompt`` is a hard error.
+    """
+    if not m.get("humaneval", common.get("humaneval", False)):
+        return None
+    mode = m.get("eval_prompt")
+    if mode not in EVAL_MODES:
+        raise ValueError(
+            f"{m['id']} needs an explicit eval_prompt in {EVAL_MODES}; "
+            "refusing to guess the evaluation protocol from the repo name")
+    n = m.get("humaneval_n", common.get("humaneval_n",
+                                            DEFAULT_HUMANEVAL_N))
+    n = DEFAULT_HUMANEVAL_N if n is None else n
+    if type(n) is not int or not 1 <= n <= MAX_HUMANEVAL:
+        raise ValueError(
+            f"{m['id']} humaneval_n must be 1..{MAX_HUMANEVAL}, got {n}")
+    return {"mode": mode, "n": n}
+
+
 def _timed_gen(backend, prompt: str, out_len: int, runs: int,
                seed: int = 0) -> dict:
     if runs < 1:
@@ -243,9 +267,20 @@ def _comparisons(results: list[dict]) -> list[dict]:
 
 def run_model(m: dict, common: dict) -> dict:
     print(f"[run] {m['id']} ({m['backend']})", flush=True)
+    # Validate the eval protocol before the expensive speed run: a missing
+    # eval_prompt must not cost a full benchmark before failing.
+    eval_spec = _humaneval_spec(m, common)
     seed = int(m.get("seed", common.get("seed", 0)))
     _seed_all(seed)
     backend = _build_backend(m, common)
+    eval_protocol = None
+    if eval_spec is not None:
+        if isinstance(backend, TransformersBackend):
+            eval_protocol = backend.evaluation_protocol(eval_spec["mode"])
+        elif eval_spec["mode"] == "chat":
+            raise ValueError("chat evaluation requires a chat-capable HF backend")
+        else:
+            eval_protocol = build_protocol(eval_spec["mode"])
     for _ in range(int(common.get("warmup", 1))):
         backend.warmup()
     # Warmup must not consume the random stream used by measured runs.
@@ -280,18 +315,26 @@ def run_model(m: dict, common: dict) -> dict:
         "git_sha": _git("rev-parse", "HEAD"),
         "speed": speed,
     }
-    if m.get("humaneval", common.get("humaneval", False)):
-        print(f"[eval] HumanEval pass@1 for {m['id']}", flush=True)
+    if eval_spec is not None:
+        print(f"[eval] HumanEval pass@1 for {m['id']} "
+              f"(mode={eval_spec['mode']}, n={eval_spec['n']})", flush=True)
         try:
             def eval_generate(prompt: str) -> str:
                 if isinstance(backend, TransformersBackend):
-                    return backend.generate(
-                        prompt, 256, force_length=False).text
+                    return backend.generate_eval(
+                        prompt, eval_spec["mode"]).text
+                if eval_spec["mode"] != "completion":
+                    raise RuntimeError(
+                        f"{m['id']} requests chat eval but "
+                        f"{m['backend']} has no chat-template eval path")
                 return backend.generate(prompt, 256).text
 
-            result["humaneval"] = run_humaneval(eval_generate, prompts=50)
+            result["humaneval"] = run_humaneval(
+                eval_generate, prompts=eval_spec["n"],
+                mode=eval_spec["mode"], protocol=eval_protocol)
         except Exception as e:  # speed result already in hand; don't discard it
-            result["humaneval"] = {"error": repr(e)}
+            result["humaneval"] = {"error": repr(e),
+                                   "protocol": eval_protocol}
             print(f"[skip] humaneval for {m['id']}: {e}", flush=True)
     return result
 
@@ -304,6 +347,11 @@ def _validate_common(common: dict) -> None:
             raise ValueError(f"common.{key} must be >= 1")
     if int(common.get("warmup", 1)) < 0:
         raise ValueError("common.warmup must be >= 0")
+    if common.get("humaneval_n") is not None:
+        n = common["humaneval_n"]
+        if type(n) is not int or not 1 <= n <= MAX_HUMANEVAL:
+            raise ValueError(
+                f"common.humaneval_n must be 1..{MAX_HUMANEVAL}, got {n}")
 
 
 def run(config_path: str, output_path: str | None = None,

@@ -114,8 +114,9 @@ def test_original_historical_and_current_samplers_capture_raw_ids():
         logits[:, :, 7] = 20.0
         return logits
 
-    for ref in ("b741770^", "HEAD"):
-        sha, source = g1.backend_source(ref)
+    sources = [g1.backend_source(ref) for ref in ("b741770^", "HEAD")]
+    sources.append(("workingtree", (SCRIPT.parent / "backends.py").read_bytes()))
+    for sha, source in sources:
         tokenizer = g1.RecordingTokenizer(Tokenizer())
         backend = g1.load_backend(source, sha, score, tokenizer, 1,
                                   SimpleNamespace(block_size=4, steps=2, confidence=0.9))

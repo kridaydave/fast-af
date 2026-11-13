@@ -13,6 +13,23 @@ python -m bench --config bench/config.yaml --out results.yaml
 
 Verify CUDA: `python -c "import torch; print(torch.cuda.get_device_name(0))"` should print T4.
 
+## Evaluation protocol
+
+Every model with `humaneval: true` declares `eval_prompt: completion` or
+`chat` in `bench/config.yaml`. The harness refuses to guess a mode from a repo
+name. `common.humaneval_n` is 50 by default; set it to 164 for G0 calibration.
+The full prompt/extraction policy, fixed chat instruction, hash, and audit
+fields are in [docs/EVALUATION_PROTOCOL.md](../docs/EVALUATION_PROTOCOL.md).
+Do not tune the instruction or parser on HumanEval scores. Historical
+`results_t4*.yaml` rows are completion-protocol 50-problem results and are not
+valid quality evidence for the chat protocol.
+
+G0 (spec prerequisite): run `HuggingFaceTB/SmolLM2-1.7B` base on HumanEval-164
+with a frozen prewritten prompt template and record the score as harness
+calibration only (target 22.6 +/- 6 points). A dedicated G0 config sets
+`humaneval_n: 164` and an explicit `eval_prompt` mode; do not reuse benchmark
+selection decisions from the calibration score.
+
 ## Tier 1 — AR baselines (day 1)
 
 - `Qwen/Qwen3.5-0.8B` (B0 reference, fp16, vanilla decode). No official HumanEval exists; we measure it.

@@ -9,6 +9,12 @@
 # timed generations, same GPU. TPS uses total model-generation time after
 # host-side tokenization, including prefill/cache warm. Prefill is also logged.
 # HumanEval pass@1 (n=1) is the quality guardrail and is tracked separately.
+#
+# Eval protocol: every model with humaneval: true must declare eval_prompt:
+# completion (raw HumanEval prompt as the continuation prefix) or chat
+# (tokenizer.apply_chat_template + the fixed instruction in
+# bench/humaneval.py). The mode is never inferred from the repo name.
+# humaneval_n selects the slice (50 default; 164 for the G0 calibration run).
 
 common:
   prompt_len: 1024      # tokens in — enforced by fit_prompt() in run.py
@@ -18,6 +24,7 @@ common:
   seed: 0
   dtype: float16        # T4 has no bf16; fp16 is the full tier
   humaneval: true       # track pass@1 for every AR model
+  humaneval_n: 50       # HumanEval slice; set 164 for the G0 calibration run
   warmup: 1             # short backend warmup calls before measured runs
 
 models:
@@ -27,6 +34,7 @@ models:
     repo: HuggingFaceTB/SmolLM2-135M-Instruct
     quant: null
     humaneval: true
+    eval_prompt: chat       # instruct model: raw continuation produced prose
     note: "135M AR, Apache-2.0, L1 yardstick"
 
   - id: qwen3.5-0.8b            # B0
@@ -34,6 +42,7 @@ models:
     repo: Qwen/Qwen3.5-0.8B
     quant: null
     humaneval: true
+    eval_prompt: completion
     note: "GDN hybrid AR, same family as D1. B1/B2 build on this."
 
   - id: qwen3.5-0.8b-int4       # B1
@@ -41,6 +50,7 @@ models:
     repo: Qwen/Qwen3.5-0.8B
     quant: int4                 # bnb int4 (AWQ also runs on T4, see BENCHMARK_WEEK B1)
     humaneval: true
+    eval_prompt: completion
     note: "B0 + bitsandbytes post-training int4; measured 0.79x fp16 on the lean T4 run"
 
   - id: qwen3.5-0.8b-dflash2    # B2 placeholder; intentionally fails until wired
@@ -49,6 +59,7 @@ models:
     quant: int4
     speculative: dflash2
     humaneval: true
+    eval_prompt: completion
     note: "B0 + int4 + DFlash2; not wired, so the harness refuses to mislabel plain int4 as B2"
 
   - id: lfm2.5-350m
@@ -56,6 +67,7 @@ models:
     repo: LiquidAI/LFM2.5-350M
     quant: null
     humaneval: true
+    eval_prompt: completion
     note: "354M hybrid AR, fast; latest small hybrid reference"
 
   # ---- diffusion, size-matched to D1 ----
@@ -69,6 +81,7 @@ models:
     commit: confidence
     kv_cache: false
     humaneval: false            # diffusion row is speed-only; HumanEval stays AR-only (spec)
+    eval_prompt: completion
     note: "144M block diffusion, block_size 32, Apache-2.0. D1's closest size-matched diffusion twin."
 
   - id: smoldlm-144m-cached
@@ -83,6 +96,7 @@ models:
     compare_to: smoldlm-144m
     semantic_equivalence_claimed: false
     humaneval: false
+    eval_prompt: completion
     note: "Cached-prefix smoldlm policy; semantically different from the uncached full-sequence approximation, not a pure cache-only A/B."
 
   # ---- paradigm check at scale ----
@@ -96,6 +110,7 @@ models:
     mode: default               # native masked diffusion
     steps: 32
     humaneval: false
+    eval_prompt: completion
     note: "LLaDA-8B default config"
 
   - id: llada-8b-fastdllm
@@ -104,4 +119,5 @@ models:
     mode: fast-dllm             # Fast-dLLM decoding policy
     steps: 8
     humaneval: false
+    eval_prompt: completion
     note: "LLaDA-8B with Fast-dLLM decode; the tuned-policy comparison"
