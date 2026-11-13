@@ -83,3 +83,56 @@ below is pushed to the end of benchmark week. Do not start it early.
 ## Tokenizer decision (resolved 2026-11-06)
 
 Train our own 32k BPE on a corpus sample. Reuse nothing. This affects pretrain data prep; benchmark week is unaffected.
+
+## G1 historical sampler regression
+
+`bench/token_baseline.py` captures full token IDs from an exact committed
+`CustomBackend` source without switching the checkout. Use the parent of
+`b741770` for the pre-patch greedy baseline and `HEAD` for the patched sampler.
+Both use uncached confidence commits at temperature 0. This comparison isolates
+the sampler change; cached-versus-uncached benchmark rows are separate policies.
+
+On the same T4 session, set `G1_MODEL_SHA` to an immutable 40-character commit
+from `HoangHa/smoldlm-144m` on Hugging Face, then run:
+
+```bash
+# Create g1-prompt.txt with the exact prompt to freeze (UTF-8, including newlines).
+# Set this to a real immutable Hugging Face model revision:
+export G1_MODEL_SHA='<40-character-model-commit>'
+python bench/token_baseline.py capture --role baseline --source-ref 'b741770^' \
+  --model-revision "$G1_MODEL_SHA" --prompt-file g1-prompt.txt \
+  --output-length 1024 --block-size 32 --steps 8 --confidence 0.9 \
+  --dtype float16 --device cuda --seed 0 --out g1-baseline.json
+python bench/token_baseline.py capture --role candidate --source-ref HEAD \
+  --model-revision "$G1_MODEL_SHA" --prompt-file g1-prompt.txt \
+  --output-length 1024 --block-size 32 --steps 8 --confidence 0.9 \
+  --dtype float16 --device cuda --seed 0 --out g1-candidate.json
+python bench/token_baseline.py compare g1-baseline.json g1-candidate.json \
+  --json-out g1-comparison.json
+```
+
+Capture requires Git history plus PyTorch, `huggingface_hub`, `safetensors`, and
+`tokenizers`. It downloads the model definition, config, weights, and tokenizer
+at the specified revision and records their SHA-256 hashes. An optional
+`--tokenizer-revision` pins a different tokenizer commit; by default it uses the
+model revision. The model's download helper is bypassed so it cannot silently
+fetch assets from `main`. The exact committed decode loop runs unchanged, with
+a recording tokenizer retaining the historical loop's IDs before text decoding.
+The candidate uses committed source too: commit sampler edits before capturing.
+
+The artifacts include source commit/hash, prompt text/IDs, all policy knobs,
+seed, dtype, and runtime versions/device. Output length must be a positive whole
+number of blocks. Early EOS/short output fails capture; do not treat a short
+preview or re-encoded text as a baseline. Capture re-runs the historical sampler
+under the recorded assets/environment; it does not recover the November 9 output
+or prove that its original model revision is known. Preserve both JSON artifacts
+and their comparison report as the newly frozen G1 evidence.
+
+The direct-script comparator uses only Python's standard library. It requires
+matching assets, prompts, lengths, policies, seeds, and environments, and distinct
+backend source hashes. It reports every mismatching position, total matches,
+agreement, source commits, and input artifact hashes. Exit codes are **0** for
+agreement >=99%, **1** for a valid comparison below 99%, and **2** for invalid or
+incompatible inputs. Invalid comparisons also overwrite `--json-out` with an
+error, so a previous passing report cannot be mistaken for the latest result.
+No G1 pass is claimed until the real model capture/comparison is run.

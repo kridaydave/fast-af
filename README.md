@@ -20,6 +20,11 @@ Output `results.yaml`: machine provenance plus per-model configuration,
 speed/pass/cache-warm accounting, stop reasons, full baseline token IDs and,
 for AR models, HumanEval pass@1 with raw per-problem completions for re-scoring.
 
+For the historical G1 sampler gate, use the [baseline capture and comparison
+commands](bench/BENCHMARK_WEEK.md#g1-historical-sampler-regression). These freeze
+full token IDs from the historical and current committed samplers, with pinned
+model assets and a strict offline 99% agreement check.
+
 ## Backends (`bench/backends.py`)
 
 | backend  | models | status |
