@@ -1,0 +1,12 @@
+{
+  "/home/kriday/Code/AI/fast-af-boi": {
+    "status": " M results_smoke.yaml\n?? g1-baseline.json\n?? g1-candidate.json\n?? g1-comparison.json\n",
+    "diff_sha256": "33a04ebf577ee77be89083121818d83c9c1c3331c1f267879ca931072526b5f7",
+    "head": "cde26573920c7ae5bd6aab06617952ba282bbde9"
+  },
+  "/home/kriday/.t3/worktrees/fast-af-boi/t3-8a46ff0f-9fc27c4d565e9888": {
+    "status": " M scripts/train_diffusion.py\n M tests/test_train_diffusion.py\n",
+    "diff_sha256": "336d80708abe08d04c5b467b18b2c81261d5cd0c0811e808545ee96efd567520",
+    "head": "1bf87efe2b72e21328bd254c56ae112666355ef0"
+  }
+}

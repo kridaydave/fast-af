@@ -1,0 +1,5 @@
+resumed /tmp/fast-af-training-integration-29z6bdtq/interrupted/checkpoint-000003.pt at step 3 tokens 12288
+{"step": 4, "loss": 42.237086695028964, "lr": 0.000165, "tokens_seen": 16384, "grad_norm": 54.566802978515625, "optimizer_steps": 4, "optimizer_step_skipped": false}
+{"step": 5, "loss": 42.30796449449327, "lr": 6.954058453981609e-05, "tokens_seen": 20480, "grad_norm": 55.77445602416992, "optimizer_steps": 5, "optimizer_step_skipped": false}
+{"step": 6, "loss": 39.020897511388526, "lr": 2.9999999999999997e-05, "tokens_seen": 24576, "grad_norm": 61.813968658447266, "optimizer_steps": 6, "optimizer_step_skipped": false, "val_loss": 42.94586181640625}
+{"config_hash": "61384bcc63a4fc769aa6a42f8a37497d8bef4ace18a1333651ee8522bcddc4e8", "params": 2213632, "step": 6, "tokens_seen": 24576, "val_losses": [42.94586181640625], "checkpoints": ["checkpoint-000006.pt"]}

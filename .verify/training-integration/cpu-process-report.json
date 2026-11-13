@@ -1,0 +1,161 @@
+{
+  "device": "cpu",
+  "torch": "2.15.0+cpu",
+  "cuda_available": false,
+  "artifact_dir": "/tmp/fast-af-training-integration-29z6bdtq",
+  "bundle": "/home/kriday/Code/AI/fast-af-boi/artifacts/training-v1/final",
+  "provenance": {
+    "manifest_sha256": "ca4406983c2604f2d124d35cfda8635f289d208113a1c73efa08c789b685cb87",
+    "fingerprint": "6f62a175ac05648cdef20684fba9038105a906333a0bcea57f81c3f48a172ab4",
+    "tokenizer_manifest_sha256": "5686f355f4332a73a8caa67910d4c52d798a7f361df1f35450ea0f4ed3b241b0",
+    "tokenizer_sha256": "5bb6b95687e59ae2c8a52c7ec8e664574aaffae8875f567a7335d9d666e3de0b",
+    "seq_len": 1024,
+    "shards": [
+      {
+        "split": "train",
+        "path": "train-00000.bin",
+        "sha256": "e2324c1fa7d6a0326d6743e5952396ca3eec7d086b84011d763734016a7b9f5e",
+        "tokens": 10485760
+      },
+      {
+        "split": "train",
+        "path": "train-00001.bin",
+        "sha256": "ff57645de81a4de767c8bba549b2194f44cdeceae4a2908bea8034db3f629f77",
+        "tokens": 10485760
+      },
+      {
+        "split": "train",
+        "path": "train-00002.bin",
+        "sha256": "c4de05e93a8ebdfc7460b0f3d0b3e1fa5230cc1ff7e92a40cee649a22bdf4c6f",
+        "tokens": 10485760
+      },
+      {
+        "split": "train",
+        "path": "train-00003.bin",
+        "sha256": "3e6c4969131f1d56bbf420b04d4f0d8bb2371f7f58e79c60a7c2861775244953",
+        "tokens": 10485760
+      },
+      {
+        "split": "train",
+        "path": "train-00004.bin",
+        "sha256": "66390d72097b3e5b60b9c028614b5fd0e0ef6098d38c6f48f77cbc4af0ee7aec",
+        "tokens": 10485760
+      },
+      {
+        "split": "train",
+        "path": "train-00005.bin",
+        "sha256": "2c7315efa82acccae450aa7a1939460228ed7743674d40fe08f4a08fc6300d96",
+        "tokens": 10485760
+      },
+      {
+        "split": "train",
+        "path": "train-00006.bin",
+        "sha256": "6c9a94a48b64f060108ddfeeb0e2cf7d8cb9ea8e89307571ef1222da40162e88",
+        "tokens": 10485760
+      },
+      {
+        "split": "train",
+        "path": "train-00007.bin",
+        "sha256": "32da16d57a9b6702794e4ed9d9ae5946a1f976d8cf495a61e9c6d6ea9ae0923a",
+        "tokens": 10485760
+      },
+      {
+        "split": "train",
+        "path": "train-00008.bin",
+        "sha256": "76b085c3159af669791ee077b2ce6a73d16f1943d73d312f095b5175e02397eb",
+        "tokens": 10485760
+      },
+      {
+        "split": "train",
+        "path": "train-00009.bin",
+        "sha256": "4ec74c2189f6537dbeecb96ddfcc09a6c2515e048ac1110e23f9915301a5cf6b",
+        "tokens": 5611520
+      },
+      {
+        "split": "validation",
+        "path": "validation-00000.bin",
+        "sha256": "1da1fcb2b105ad8e66040f94c71845f71f7631e62a2854c97b3cfaed3bc5692f",
+        "tokens": 983040
+      }
+    ]
+  },
+  "process_killed_at_step": 4,
+  "exit_code": -9,
+  "resume_checkpoint_step": 3,
+  "final_step": 6,
+  "tokens_seen": 24576,
+  "exact_match": [
+    "loss records",
+    "model",
+    "optimizer",
+    "scheduler",
+    "scaler",
+    "loader",
+    "torch RNG"
+  ],
+  "full_records": [
+    {
+      "step": 1,
+      "loss": 48.8187113023551,
+      "lr": 0.0003,
+      "tokens_seen": 4096,
+      "grad_norm": 39.487083435058594,
+      "optimizer_steps": 1,
+      "optimizer_step_skipped": false
+    },
+    {
+      "step": 2,
+      "loss": 47.04341830967859,
+      "lr": 0.0003,
+      "tokens_seen": 8192,
+      "grad_norm": 49.80304718017578,
+      "optimizer_steps": 2,
+      "optimizer_step_skipped": false
+    },
+    {
+      "step": 3,
+      "loss": 47.61407759902458,
+      "lr": 0.0002604594154601839,
+      "tokens_seen": 12288,
+      "grad_norm": 41.71293258666992,
+      "optimizer_steps": 3,
+      "optimizer_step_skipped": false,
+      "val_loss": 45.266517639160156
+    },
+    {
+      "step": 4,
+      "loss": 42.237086695028964,
+      "lr": 0.000165,
+      "tokens_seen": 16384,
+      "grad_norm": 54.566802978515625,
+      "optimizer_steps": 4,
+      "optimizer_step_skipped": false
+    },
+    {
+      "step": 5,
+      "loss": 42.30796449449327,
+      "lr": 6.954058453981609e-05,
+      "tokens_seen": 20480,
+      "grad_norm": 55.77445602416992,
+      "optimizer_steps": 5,
+      "optimizer_step_skipped": false
+    },
+    {
+      "step": 6,
+      "loss": 39.020897511388526,
+      "lr": 2.9999999999999997e-05,
+      "tokens_seen": 24576,
+      "grad_norm": 61.813968658447266,
+      "optimizer_steps": 6,
+      "optimizer_step_skipped": false,
+      "val_loss": 42.94586181640625
+    }
+  ],
+  "training_commit": "ff333528487fdce0947599daa87b067bbed66947",
+  "checkpoint_format": 3,
+  "library_versions": {
+    "python": "3.14.8",
+    "torch": "2.15.0+cpu",
+    "numpy": "2.5.4"
+  }
+}

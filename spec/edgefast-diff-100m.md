@@ -32,7 +32,7 @@ If D1 doesn't clearly beat B2, there is no reason for it to exist.
 | Component | Choice | Evidence |
 |---|---|---|
 | Linear layers (12) | Gated DeltaNet (GDN) | Delta-rule layers win recall: GDN-2 > GDN > KDA > Mamba-3 > Mamba-2 at 1.3B (arXiv:2605.22791). GDN ships in Qwen3-Next, kernels exist. GDN-2 is the stretch option once it matures. |
-| Attention layers (4) | Full attention, GQA 2 KV heads, head dim 128, NoPE | 3:1 ratio, uniformly interleaved (attention at blocks 4, 8, 12, 16). Recall saturates at 3:1 (arXiv:2507.06457); Kimi Linear measured 3:1 best PPL. Full attention on sparse layers is what every shipped hybrid uses; sliding window retracted (Waleffe et al. found windowed hybrids degrade past the window, arXiv:2406.07887). 5 query heads at d_model 640, so 2 KV heads keeps GQA a real saving. |
+| Attention layers (4) | Full attention, NoPE; GQA head layout OPEN | 3:1 ratio, uniformly interleaved (attention at blocks 4, 8, 12, 16). Recall saturates at 3:1 (arXiv:2507.06457); Kimi Linear measured 3:1 best PPL. Full attention on sparse layers is what every shipped hybrid uses; sliding window retracted (Waleffe et al. found windowed hybrids degrade past the window, arXiv:2406.07887). The earlier proposal of 5 query heads at head dim 128 and 2 KV heads is invalid for standard grouped-query attention, since 5 is not divisible by 2. Freeze a valid head layout or a separate query projection width before implementing D1; see `docs/TRAINING_RECIPE_T4_PILOT.md` section 2.2. |
 | Placement | Uniform interleave | Waleffe et al.: no ordering beats evenly dispersed. |
 | FFN | SwiGLU, 8/3 expansion (1728, 64-multiple) | Standard. |
 | Norm | RMSNorm, pre-norm | Standard. |

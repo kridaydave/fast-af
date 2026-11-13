@@ -5,7 +5,9 @@ and [train a reproducible byte-level BPE tokenizer](docs/TOKENIZER.md).
 The [actual training-data workflow](docs/TRAINING_DATA.md) fetches pinned sources,
 filters the full benchmark sets, and enforces the token mixture. The
 [minimal training loop](docs/TRAINING_LOOP.md) trains and resumes a small
-diffusion model on that packed bundle.
+diffusion model on that packed bundle. The [T4 pilot recipe](docs/TRAINING_RECIPE_T4_PILOT.md)
+and [integration review](docs/TRAINING_INTEGRATION_REVIEW.md) record the D1 blockers
+and verified CPU checks.
 
 Measures TPS (tokens/s) and HumanEval pass@1 for the D1 roster on a free T4
 (batch 1, 1k in / 1k out, median of 5 timed runs). D1 is 100M; baselines are
