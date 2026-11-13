@@ -20,6 +20,11 @@ python -m bench --only smollm2-135m,qwen3.5-0.8b
 
 The harness is in `bench/`, the model roster in `bench/config.yaml`, the docs in `docs/`, and the recorded runs in `results_t4*.yaml`. Start with `docs/DATA_PIPELINE.md` and `docs/TOKENIZER.md` if you want to build the data.
 
+The [actual training-data workflow](docs/TRAINING_DATA.md) fetches pinned sources,
+filters the full benchmark sets, and enforces the token mixture. The
+[minimal training loop](docs/TRAINING_LOOP.md) trains and resumes a small
+diffusion model on that packed bundle.
+
 ## Backends
 
 | backend | models | status |
