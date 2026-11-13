@@ -275,6 +275,26 @@ def test_run_model_uses_the_configured_chat_protocol(monkeypatch):
     assert result["humaneval"]["protocol"]["mode"] == "chat"
 
 
+def test_build_backend_forwards_warm_batch(monkeypatch):
+    import importlib
+    run_module = importlib.import_module("bench.run")
+    captured = {}
+
+    def fake_load_smoldlm(repo, **kwargs):
+        captured.update(kwargs)
+        return "fake-backend"
+
+    monkeypatch.setattr(run_module, "load_smoldlm", fake_load_smoldlm)
+    m = {"backend": "custom", "repo": "x", "block_size": 32,
+         "kv_cache": True, "warm_batch": True}
+    assert run_module._build_backend(m, {"dtype": "float16"}) == "fake-backend"
+    assert captured["warm_batch"] is True and captured["kv_cache"] is True
+    # roster entries that don't mention it stay on the validated default
+    del m["warm_batch"]
+    run_module._build_backend(m, {"dtype": "float16"})
+    assert captured["warm_batch"] is False
+
+
 def test_validate_common_checks_humaneval_n():
     import pytest
     from bench.run import _validate_common

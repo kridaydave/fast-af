@@ -129,7 +129,8 @@ def _build_backend(m: dict, common: dict):
                             dtype=common["dtype"],
                             temperature=m.get("temperature", 0.0),
                             commit=m.get("commit", "confidence"),
-                            kv_cache=m.get("kv_cache", False))
+                            kv_cache=m.get("kv_cache", False),
+                            warm_batch=m.get("warm_batch", False))
     raise ValueError(f"unknown backend: {b}")
 
 

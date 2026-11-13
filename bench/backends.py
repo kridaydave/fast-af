@@ -272,8 +272,11 @@ class CustomBackend:
     kv_cache=True the three cache hooks replace score_fn: cache_reset()
     clears the model cache, cache_warm(ids, pos) appends committed tokens
     to it, score_block(block, pos) scores one block against the cached
-    prefix. The other D1 knobs from the spec (0.97 block early stop, block
-    overlap) belong to the real model's loop, not this prototype.
+    prefix. An optional fourth hook, cache_warm_all(ids), replaces the
+    chunked prefix warm with a single equivalent forward (the block-causal
+    mask path; see load_smoldlm). The other D1 knobs from the spec (0.97
+    block early stop, block overlap) belong to the real model's loop, not
+    this prototype.
 
     tokenizer is a `tokenizers.Tokenizer` (encode().ids / decode()).
     """
@@ -287,7 +290,8 @@ class CustomBackend:
                  commit: str = "confidence", kv_cache: bool = False,
                  cache_reset: Callable[[], None] | None = None,
                  cache_warm: Callable[[list[int], int], None] | None = None,
-                 score_block: Callable[..., Any] | None = None):
+                 score_block: Callable[..., Any] | None = None,
+                 cache_warm_all: Callable[[list[int]], None] | None = None):
         if block_size < 1:
             raise ValueError(f"block_size must be >= 1, got {block_size}")
         if steps < 1:
@@ -300,6 +304,8 @@ class CustomBackend:
             raise ValueError(
                 "kv_cache=True needs cache_reset, cache_warm and score_block "
                 "hooks (load_smoldlm wires them)")
+        if cache_warm_all is not None and not kv_cache:
+            raise ValueError("cache_warm_all needs kv_cache=True")
         if temperature > 0 and commit == "confidence":
             warnings.warn(
                 "temperature > 0 with commit='confidence' commonly collapses "
@@ -323,6 +329,7 @@ class CustomBackend:
         self.cache_reset = cache_reset
         self.cache_warm = cache_warm
         self.score_block = score_block
+        self.cache_warm_all = cache_warm_all
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     @staticmethod
@@ -341,19 +348,26 @@ class CustomBackend:
     def warmup(self) -> None:
         self.generate("the quick brown fox", 8)
 
-    def _score(self, seq: torch.Tensor, block: list[int],
+    def _score(self, seq: torch.Tensor | None, block: list[int],
                pos_offset: int | None) -> torch.Tensor:
         """One forward pass. With kv_cache the prefix lives in the model's
-        KV cache, so only the block is fed, at its absolute position."""
+        KV cache, so only the block is fed, at its absolute position; seq
+        (the full-sequence tensor) is unused there and may be None."""
         if self.kv_cache and pos_offset is not None:
             block_t = torch.tensor([block], device=self.device)
             return self.score_block(block_t, pos_offset=pos_offset)
         return self.score_fn(seq)
 
     def _warm(self, ids: list[int]) -> int:
-        """Feed committed tokens into the KV cache in block_size chunks."""
+        """Feed committed tokens into the KV cache. With cache_warm_all the
+        whole prefix goes through one block-causal forward (tests prove the
+        cache equals the chunked schedule's); otherwise block_size chunks,
+        the stock modeling_smoldlm warm schedule."""
         if not self.kv_cache or not ids:
             return 0
+        if self.cache_warm_all is not None:
+            self.cache_warm_all(list(ids))
+            return 1
         calls = 0
         for start in range(0, len(ids), self.block_size):
             self.cache_warm(ids[start:start + self.block_size], start)
@@ -389,7 +403,11 @@ class CustomBackend:
             # stock schedule: commits-per-pass fixed from the block's
             # initial mask count (modeling_smoldlm.generate)
             k0 = max(1, self.block_size // self.steps)
-            seq = torch.tensor([out_ids + block], device=self.device)
+            # the kv path scores only the block against the cache, so the
+            # full-sequence tensor would be dead weight (an H2D copy of the
+            # whole prefix+block every pass)
+            seq = None if self.kv_cache else torch.tensor(
+                [out_ids + block], device=self.device)
             for step in range(self.steps):
                 open_slots = [i for i, t in enumerate(block)
                               if t == self.MASK_ID]
@@ -408,7 +426,10 @@ class CustomBackend:
                     tok = picked
                 else:
                     conf, tok = probs.max(dim=-1)      # per-slot (block,)
+                # one device->host copy per pass, not one per filled slot:
+                # int(tok[i]) on a CUDA tensor syncs the stream each time
                 conf = conf.float().cpu()
+                tok_ids = tok.cpu().tolist()
                 passes += 1
                 last = step == self.steps - 1
                 if self.commit == "topk":
@@ -430,12 +451,13 @@ class CustomBackend:
                         fallback_commits += 1
                 fill_counts.append(len(fill))
                 for i in fill:
-                    if int(tok[i]) == self.MASK_ID:
+                    if tok_ids[i] == self.MASK_ID:
                         raise RuntimeError(
                             "score_fn let the mask id win argmax at an open "
                             "slot; pin mask/pad logits to -inf")
-                    block[i] = int(tok[i])
-                seq = torch.tensor([out_ids + block], device=self.device)
+                    block[i] = tok_ids[i]
+                if not self.kv_cache:
+                    seq = torch.tensor([out_ids + block], device=self.device)
             blocks += 1
             if self.eos_id in block:
                 block = block[:block.index(self.eos_id)]
@@ -472,7 +494,9 @@ class CustomBackend:
 def load_smoldlm(repo: str, block_size: int, steps: int, confidence: float,
                  dtype: str, temperature: float = 0.0,
                  commit: str = "confidence",
-                 kv_cache: bool = False) -> CustomBackend:
+                 kv_cache: bool = False,
+                 warm_batch: bool = False,
+                 device: str | None = None) -> CustomBackend:
     """Wire CustomBackend to HoangHa/smoldlm-144m.
 
     The repo ships `modeling_smoldlm.py` as a standalone module (not a
@@ -485,13 +509,37 @@ def load_smoldlm(repo: str, block_size: int, steps: int, confidence: float,
     set_cache_mode(True) (write), score denoising passes with it off (read
     only). Expected to cut per-pass cost from O(prefix+block) to O(block);
     wire only this one flag to measure it against the cached-off baseline.
-    """
-    import importlib.util
 
+    warm_batch=True (opt-in) warms the whole prompt in ONE forward instead
+    of block_size chunks. The model's attention is is_causal=False, so a
+    plain full-prefix warm would leak future chunks into earlier K/V and is
+    NOT equivalent. The equivalent form is a block-causal mask: position p
+    may attend keys j <= end of p's own block, exactly the position set a
+    chunked warm gives it (cache 0..32c-1 plus its own chunk). The stock
+    forward takes no mask, so the attention forwards are replaced with a
+    mask-capable verbatim copy of the pinned revision's forward. fp64 cache
+    equality and fp32 token equality against the chunked schedule are
+    pinned by tests/test_smoldlm_cache.py.
+    """
+    import hashlib
+    import importlib.util
+    import types
+    from pathlib import Path
+
+    import torch.nn.functional as F
     from huggingface_hub import hf_hub_download
     from tokenizers import Tokenizer
 
+    if warm_batch and not kv_cache:
+        raise ValueError("warm_batch warms the KV cache; needs kv_cache=True")
+    if device not in (None, "cpu", "cuda"):
+        raise ValueError("device must be cpu or cuda")
+    if device == "cuda" and not torch.cuda.is_available():
+        raise ValueError("CUDA was requested but is not available")
     mod_path = hf_hub_download(repo, "modeling_smoldlm.py")
+    source_hash = hashlib.sha256(Path(mod_path).read_bytes()).hexdigest()
+    if warm_batch and source_hash != "a366731ca477d1edb6217838c4f32d5468aaf85a6c4a4b89215abf91192f7dec":
+        raise ValueError("warm_batch requires the validated smoldlm source from revision 64f1177; upstream code changed")
     spec = importlib.util.spec_from_file_location("modeling_smoldlm", mod_path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -500,7 +548,7 @@ def load_smoldlm(repo: str, block_size: int, steps: int, confidence: float,
         model = model.half()  # match the AR tier's fp16 full-precision run
     # CustomBackend builds its tensors on this same device; without the
     # move a CUDA box (Colab T4) would feed CPU weights a CUDA tensor
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(dev)
 
     def score_fn(seq):
@@ -513,6 +561,7 @@ def load_smoldlm(repo: str, block_size: int, steps: int, confidence: float,
     cache_reset: Callable[[], None] | None = None
     cache_warm: Callable[[list[int], int], None] | None = None
     score_block: Callable[..., Any] | None = None
+    cache_warm_all: Callable[[list[int]], None] | None = None
     if kv_cache:
         def cache_reset() -> None:
             model.reset_kv_cache()
@@ -524,7 +573,11 @@ def load_smoldlm(repo: str, block_size: int, steps: int, confidence: float,
             chunk = torch.tensor([ids], device=dev)
             model.set_cache_mode(True)   # writes K/V for this chunk only
             try:
-                model(chunk, pos_offset=pos_offset)
+                # no_grad like score_fn and the stock generate(): a warm
+                # forward only stores K/V, an autograd graph through 30
+                # layers would be built and immediately discarded
+                with torch.no_grad():
+                    model(chunk, pos_offset=pos_offset)
             finally:
                 model.set_cache_mode(False)
 
@@ -539,11 +592,82 @@ def load_smoldlm(repo: str, block_size: int, steps: int, confidence: float,
             logits[:, :, model.pad_token_id] = -float("inf")
             return logits
 
-    return CustomBackend(
+    if kv_cache and warm_batch:
+        def attn_forward_with_warm_mask(self, x, cos, sin):
+            # verbatim copy of modeling_smoldlm.MultiHeadAttention.forward
+            # (repo revision 64f1177) with ONE changed line, marked below:
+            # SDPA reads an optional block-causal _warm_mask. Kept as a copy
+            # because the stock forward takes no mask argument and the
+            # block-causal equivalence is what makes batched warm correct.
+            B, T, _ = x.size()
+            x_pre = x
+            q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
+            k = self.c_k(x).view(B, T, self.n_kv_head, self.head_dim)
+            v = self.c_v(x).view(B, T, self.n_kv_head, self.head_dim)
+            q, k = mod.apply_rotary_emb(q, k, cos, sin)
+            q, k = self.q_norm(q), self.k_norm(k)
+            q = q.transpose(1, 2)
+            k, v = k.transpose(1, 2), v.transpose(1, 2)
+            k_current, v_current = k, v
+            if self.kv_cache is not None:
+                cached_k, cached_v = self.kv_cache
+                k = torch.cat([cached_k, k], dim=2)
+                v = torch.cat([cached_v, v], dim=2)
+            if self.n_kv_head != self.n_head:
+                repeats = self.n_head // self.n_kv_head
+                k = k.repeat_interleave(repeats, dim=1)
+                v = v.repeat_interleave(repeats, dim=1)
+            # the one changed line: optional mask, None outside warm = stock
+            y = F.scaled_dot_product_attention(
+                q, k, v, is_causal=False,
+                attn_mask=getattr(self, "_warm_mask", None))
+            if self.cache_mode:
+                self.update_cache(k_current, v_current)
+            gate = self.w_gate(x_pre).view(
+                B, T, self.n_head, self.head_dim).transpose(1, 2)
+            y = y * torch.sigmoid(gate)
+            y = y.transpose(1, 2).contiguous().view(B, T, -1)
+            return self.c_proj(y)
+
+        for blk in model.blocks:
+            blk.attn.forward = types.MethodType(attn_forward_with_warm_mask,
+                                                blk.attn)
+
+        def cache_warm_all(ids: list[int]) -> None:
+            if not ids:
+                return
+            ids_t = torch.tensor([ids], device=dev)
+            n = ids_t.shape[1]
+            # block-causal: position p attends keys j <= end of p's own
+            # block (the last partial block ends at n-1 on its own). True
+            # = participates, per SDPA's bool-mask semantics.
+            block_end = (torch.arange(n, device=dev) // block_size + 1) \
+                * block_size - 1
+            mask = (torch.arange(n, device=dev)[None, :]
+                    <= block_end[:, None])[None, None]
+            for blk in model.blocks:
+                blk.attn._warm_mask = mask
+            model.set_cache_mode(True)
+            try:
+                with torch.no_grad():
+                    model(ids_t, pos_offset=0)
+            finally:
+                # never leave the mask behind: a score pass reading a stale
+                # mask would attend the wrong position set
+                for blk in model.blocks:
+                    blk.attn._warm_mask = None
+                model.set_cache_mode(False)
+
+    backend = CustomBackend(
         block_size=block_size, steps=steps, confidence=confidence,
         score_fn=score_fn,
         tokenizer=Tokenizer.from_file(model._tokenizer_path),
         eos_id=model.eos_token_id,
         temperature=temperature, commit=commit, kv_cache=kv_cache,
         cache_reset=cache_reset, cache_warm=cache_warm,
-        score_block=score_block)
+        score_block=score_block, cache_warm_all=cache_warm_all)
+    # for tests and the profiling script; the loop itself never touches it
+    backend.model = model
+    backend.device = dev
+    backend.model_source_sha256 = source_hash
+    return backend
