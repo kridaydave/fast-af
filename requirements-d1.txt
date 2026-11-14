@@ -1,4 +1,5 @@
 # Install into a separate GPU environment with an appropriate CUDA PyTorch build.
 # The CPU reference model needs only torch and requirements-data.txt.
-# Pin the actual accelerated operator source; GPU compatibility is unvalidated.
+# Pin the accelerated operator source. Modern Triton requires SM80+; T4/SM75
+# is unsupported by this backend. No GPU execution has been validated here.
 flash-linear-attention[cuda] @ git+https://github.com/fla-org/flash-linear-attention.git@2705ab8ee9a9086bcfa6d079858e4281e01215a1

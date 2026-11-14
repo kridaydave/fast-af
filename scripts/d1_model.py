@@ -111,6 +111,15 @@ def backend_info(backend: str) -> dict[str, str]:
         raise RuntimeError('FLA is not installed; install requirements-d1.txt on the GPU host') from error
 
 
+def require_fla_device(device: torch.device | str) -> None:
+    """The pinned Triton >=3.3 stack supports SM80+, excluding T4/SM75."""
+    device = torch.device(device)
+    if device.type != 'cuda':
+        raise ValueError('FLA backend requires CUDA')
+    if torch.cuda.get_device_capability(device) < (8, 0):
+        raise ValueError('pinned FLA/Triton requires SM80+; T4/SM75 is unsupported')
+
+
 @lru_cache(maxsize=1)
 def fla_operator():
     backend_info('fla')
@@ -177,6 +186,7 @@ class GatedDeltaNet(nn.Module):
         if self.backend == 'fla':
             if x.device.type != 'cuda' or v.dtype != torch.float16:
                 raise ValueError('FLA D1 execution requires CUDA fp16 autocast')
+            require_fla_device(x.device)
             output, final = fla_operator()(
                 q=q.to(v.dtype), k=k.to(v.dtype), v=v, g=decay, beta=beta,
                 initial_state=initial, output_final_state=use_cache)

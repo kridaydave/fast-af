@@ -21,7 +21,7 @@ import torch.nn.functional as F
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.d1_model import D1Config, D1LM, backend_info
+from scripts.d1_model import D1Config, D1LM, backend_info, require_fla_device
 
 
 def validate(args: argparse.Namespace) -> tuple[dict[str, object], int]:
@@ -42,6 +42,8 @@ def validate(args: argparse.Namespace) -> tuple[dict[str, object], int]:
         torch.manual_seed(17)
         device = torch.device(args.device)
         backend = 'fla' if args.device == 'cuda' else 'torch'
+        if backend == 'fla':
+            require_fla_device(device)
         report.update(config=asdict(cfg), backend=backend_info(backend),
                       gpu=torch.cuda.get_device_name(device) if args.device == 'cuda' else None)
         model = D1LM(args.vocab_size, max(math.ceil(1024 / cfg.block_size) * cfg.block_size, 3 * cfg.block_size), cfg, backend).to(device)

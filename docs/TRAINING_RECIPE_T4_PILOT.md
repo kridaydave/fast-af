@@ -1,6 +1,6 @@
 # D1 training recipe and T4 pilot budget
 
-Architecture updated 2026-11-14; compute budget remains a draft. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; actual GPU checks and P0 measurements still block P1. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
+Architecture updated 2026-11-14; compute budget remains a draft. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; a T4-compatible accelerated backend, actual GPU checks and P0 measurements still block P1. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
 
 Labels follow repo practice. MEASURED means a repo run produced it. PAPER means a cited primary source. DERIVED means arithmetic from repo numbers. ESTIMATE means a guess that the probe must replace. UNCONFIRMED means not yet checked.
 
@@ -317,10 +317,10 @@ Open decisions for Kriday:
 2. Mask mode is now implemented as blockwise frontier masking for D1. A classical-mask comparison would be a separate, explicitly budgeted experiment.
 3. Peak learning rate. 1e-3 proposed, range 5e-4 to 2e-3. Three 50-step screens cost about 0.2 to 0.5 T4-hours and can reject unstable settings; they do not establish a convergence-optimal LR.
 4. Pilot size. 100M for P1, then matched P2 compute referenced to 500M arm-A tokens, subject to the probe. A 1B arm-A reference is a stretch.
-5. Architecture and metric definitions are implemented and recorded in `D1_ARCHITECTURE.md`. Hardware kernel checks, AMP resume and the measured budget still block G3/P1.
+5. Architecture and metric definitions are implemented and recorded in `D1_ARCHITECTURE.md`. A T4-compatible accelerated backend, hardware checks, AMP resume and the measured budget still block G3/P1.
 6. Micro-batch. The probe picks among 4, 8, and 16.
 7. Number of seeds. Two is better. One is allowed with larger margins and a low-confidence label.
-8. Kernel stack. Validate the exact flash-linear-attention and causal-conv1d versions and their sm75 support before proposing them for T4; no such compatibility check was run here. Any change to the kernel stack changes the probe target. The current repo measurements are on the lean stack without them.
+8. Kernel stack. The pinned modern FLA/Triton stack requires SM80+ and explicitly rejects T4/SM75. A performant T4-compatible backend must be implemented and validated, or the hardware plan must be revised, before P0. The Torch recurrence is a correctness path with no T4 performance evidence. Any kernel-stack change requires a new probe. The current repo measurements are on the lean stack without them.
 9. Checkpoint retention and Drive space. A checkpoint is 1.4 to 2 GB, so retention needs a decision.
 10. Whether to run the full 3B pretrain at all if P2 fails. The fallback is a single base pretrain and a published negative result.
 11. Precision. The spec lists int4 QAT from the start; the quality plan says defer it until a baseline exists. This recipe freezes fp16 for P0-P2. Decide whether int4 QAT is a P3 gate or a post-P2 product run.
