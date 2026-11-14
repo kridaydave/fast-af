@@ -1,0 +1,44 @@
+{
+  "status": "PASS",
+  "device": "cpu",
+  "torch": "2.15.0+cpu",
+  "python": "3.14.8",
+  "cuda_available": false,
+  "timestamp": "2026-11-14T15:41:19.378158+00:00",
+  "checks": [
+    "finite full-model forward",
+    "cached/full equivalence",
+    "immutable prefix across denoising rounds",
+    "no future-block leakage",
+    "finite backward through every parameter",
+    "finite AdamW update"
+  ],
+  "inputs": "synthetic clean vocabulary tokens",
+  "p0_measured": false,
+  "resume_checked": false,
+  "config": {
+    "d_model": 16,
+    "n_layers": 4,
+    "attention_every": 4,
+    "query_heads": 2,
+    "kv_heads": 1,
+    "head_dim": 8,
+    "ffn_hidden": 32,
+    "gdn_heads": 2,
+    "gdn_key_dim": 4,
+    "gdn_value_dim": 8,
+    "conv_width": 4,
+    "block_size": 4
+  },
+  "backend": {
+    "name": "torch-reference",
+    "torch": "2.15.0+cpu"
+  },
+  "gpu": null,
+  "params": 14916,
+  "cache_max_abs_error": 0.0,
+  "masked_ce": 5.572165489196777,
+  "grad_norm": 4.302227973937988,
+  "model_source_sha256": "3143717f1bb508cc92411527f07ca43b9dff2098694b58724007844fd4bba23f",
+  "git_commit": "a640397c126a5dc5d70460e52ae24e869bde6c94"
+}

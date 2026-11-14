@@ -154,3 +154,11 @@ Primary references: [Gated DeltaNet](https://arxiv.org/abs/2412.06464),
 [FLA operator](https://github.com/fla-org/flash-linear-attention/blob/2705ab8ee9a9086bcfa6d079858e4281e01215a1/fla/ops/gated_delta_rule/chunk.py),
 [block-diffusion cache lifecycle](https://arxiv.org/html/2609.11998v1#S3),
 and [PyTorch GQA](https://docs.pytorch.org/docs/2.15/generated/torch.nn.functional.scaled_dot_product_attention.html).
+
+Completed CPU evidence includes a real 109,137,632-parameter forward/cache
+check, independent recurrence and gradient checks, and exact process-kill/resume
+on real corpus contexts with a reduced-width 522,740-parameter D1. The latter
+consumed 6,144 corpus tokens, processed 4,032 prefix/active tokens, and scored
+92 masked targets. It is an infrastructure check, not a training-quality or
+full-width backward result. See `.verify/d1-implementation/README.md` for the
+per-check scope, source commits, skipped GPU checks and raw logs.

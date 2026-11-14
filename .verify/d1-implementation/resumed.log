@@ -1,0 +1,6 @@
+{"model": "d1", "params": 522740, "backend": {"name": "torch-reference", "torch": "2.15.0+cpu"}, "metric": "masked_ce"}
+resumed /tmp/d1-process-resume-dpiygagu/interrupted/checkpoint-000003.pt at step 3 tokens 3072
+{"step": 4, "masked_ce": 10.361248970031738, "lr": 0.000165, "tokens_seen": 4096, "tokens_processed": 2304, "tokens_scored": 74, "grad_norm": 1.3907657861709595, "optimizer_steps": 4, "optimizer_step_skipped": false}
+{"step": 5, "masked_ce": 10.350458145141602, "lr": 6.954058453981609e-05, "tokens_seen": 5120, "tokens_processed": 3200, "tokens_scored": 79, "grad_norm": 2.4790167808532715, "optimizer_steps": 5, "optimizer_step_skipped": false}
+{"step": 6, "masked_ce": 10.307394981384277, "lr": 2.9999999999999997e-05, "tokens_seen": 6144, "tokens_processed": 4032, "tokens_scored": 92, "grad_norm": 2.230520486831665, "optimizer_steps": 6, "optimizer_step_skipped": false}
+{"config_hash": "bf2b4d22f2da240b6e43844897e502ae4290db14cf38a512d0c69c05a135c546", "params": 522740, "metric": "masked_ce", "tokens_processed": 4032, "tokens_scored": 92, "step": 6, "tokens_seen": 6144, "val_masked_ce": [], "checkpoints": ["checkpoint-000006.pt"]}
