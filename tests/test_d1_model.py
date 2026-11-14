@@ -196,12 +196,20 @@ def test_fla_cuda_outputs_states_and_gradients_match_torch():
         right, rs = accelerated(x, use_cache=True)
     torch.testing.assert_close(left, right, rtol=0.03, atol=0.003)
     torch.testing.assert_close(ls.recurrent, rs.recurrent, rtol=0.03, atol=0.003)
-    left.float().square().mean().backward()
-    right.float().square().mean().backward()
+    for expected, actual in ((left, right), (ls.recurrent, rs.recurrent)):
+        error = torch.linalg.vector_norm(expected.float() - actual.float())
+        scale = torch.linalg.vector_norm(expected.float())
+        assert error <= 0.03 * scale + 1e-6
+    (left.float().square().sum() + ls.recurrent.square().sum()).backward()
+    (right.float().square().sum() + rs.recurrent.square().sum()).backward()
     for (name, a), (_, b) in zip(reference.named_parameters(), accelerated.named_parameters()):
         assert a.grad is not None and b.grad is not None, name
         assert torch.isfinite(a.grad).all() and torch.isfinite(b.grad).all(), name
-        torch.testing.assert_close(a.grad, b.grad, rtol=0.05, atol=0.002, msg=name)
+        # Aggregate relative error rejects all-zero gradients even when each
+        # individual entry is small. This runs only on actual CUDA + FLA.
+        error = torch.linalg.vector_norm(a.grad.float() - b.grad.float())
+        scale = torch.linalg.vector_norm(a.grad.float())
+        assert error <= 0.05 * scale + 1e-7, name
 
 
 @pytest.mark.skipif(torch.cuda.is_available(), reason='only checks the missing-CUDA error path')
