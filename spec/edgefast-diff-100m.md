@@ -27,18 +27,18 @@ If D1 doesn't clearly beat B2, there is no reason for it to exist.
 
 ## Architecture
 
-~100M params, 16 blocks, d_model 640. Same shape family as the old 1B design, scaled down (was 24 blocks, d_model 2048). Verify the exact param count in code before locking the config.
+Implemented profile, 2026-11-14: 109,137,632 parameters, 16 blocks, d_model 640. See `configs/d1.json` and `docs/D1_ARCHITECTURE.md`. The model passes CPU forward/cache checks; GPU validation and P0 throughput remain pending.
 
 | Component | Choice | Evidence |
 |---|---|---|
-| Linear layers (12) | Gated DeltaNet (GDN) | Delta-rule layers win recall: GDN-2 > GDN > KDA > Mamba-3 > Mamba-2 at 1.3B (arXiv:2605.22791). GDN ships in Qwen3-Next, kernels exist. GDN-2 is the stretch option once it matures. |
-| Attention layers (4) | Full attention, NoPE; GQA head layout OPEN | 3:1 ratio, uniformly interleaved (attention at blocks 4, 8, 12, 16). Recall saturates at 3:1 (arXiv:2507.06457); Kimi Linear measured 3:1 best PPL. Full attention on sparse layers is what every shipped hybrid uses; sliding window retracted (Waleffe et al. found windowed hybrids degrade past the window, arXiv:2406.07887). The earlier proposal of 5 query heads at head dim 128 and 2 KV heads is invalid for standard grouped-query attention, since 5 is not divisible by 2. Freeze a valid head layout or a separate query projection width before implementing D1; see `docs/TRAINING_RECIPE_T4_PILOT.md` section 2.2. |
+| Linear layers (12) | Forward GDN, 4 heads, key dim 128, value dim 256, output gate, causal conv width 4 | Delta-rule layers win recall: GDN-2 > GDN > KDA > Mamba-3 > Mamba-2 at 1.3B (arXiv:2605.22791). GDN ships in Qwen3-Next, kernels exist. GDN-2 is the stretch option once it matures. |
+| Attention layers (4) | Block-causal GQA, 10 query heads, 2 KV heads, head dim 64, NoPE | Attention at blocks 4, 8, 12, 16. Queries see their own block bidirectionally and all earlier blocks. The old five-query/two-KV layout was invalid. Prefix states are independent of later blocks, enabling exact cached computation of the same function. Quality and T4 speed remain unmeasured. |
 | Placement | Uniform interleave | Waleffe et al.: no ordering beats evenly dispersed. |
 | FFN | SwiGLU, 8/3 expansion (1728, 64-multiple) | Standard. |
 | Norm | RMSNorm, pre-norm | Standard. |
 | Vocab / embeddings | 32k, tied | At 100M the table is a bigger share of the budget (~20M of ~105M); 32k tied keeps it affordable while covering code tokens. |
-| Train context | 32k | Mamba state is unbounded at constant cost; attention layers cache the prompt once. |
-| Precision | int4 QAT from the start | ~0.5-2pt quality cost for ~2x bandwidth ceiling. At 100M the quality cost of int4 hurts more than at 1B; if QAT degrades the pilot badly, fall back to fp16 and keep the speed win honest. |
+| Train context | 1024 for the pilot | Longer-context behavior requires separate validation. GDN state is fixed-size; attention KV still grows with context. |
+| Precision | fp16 autocast, FP32 parameters and AMP scaler for P0-P2 | Quantized training is deferred until after the baseline and P2. No GPU result is claimed by the implementation. |
 
 ## Decoding
 
@@ -54,6 +54,8 @@ Block-diffusion in the BD3-LM / fixed-state style (arXiv:2503.09573, arXiv:2609.
 - Prompt encoded once and cached. Attention layers cross-attend the cached clean prefix; GDN layers carry a constant-size recurrent state across blocks. Training computes the clean prefix the same way inference does, so the cache is exact, not approximated.
 
 Back-of-envelope on T4: 100M int4 ≈ 0.06 GB per pass, T4 bandwidth ~320 GB/s → ~5,000 passes/s ceiling, times ~3 tokens per pass ≈ 15k tok/s paper math; expect a third of that after scheduling overhead and remasking waste. The fixed-state paper measured 297 tok/s single-stream for a 3B pure-Mamba block-diffusion model at 256k context, and 231 for the hybrid — at 8x smaller with the same decode trick, meaningfully higher than both is the target.
+
+The implemented objective samples one partially masked frontier block with a clean prefix and cropped future. Validation reports masked CE with no decode-round argument. T=8/T=16 generation metrics are separate. The historical L1 text below used "NLL at 8 steps"; that wording is superseded by the explicit decision protocol in `docs/TRAINING_RECIPE_T4_PILOT.md`. Its consumed-token budget also needs a measured revision for frontier sampling.
 
 ## Training recipe (revised 2026-10-30: no budget, no teacher)
 

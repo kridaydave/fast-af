@@ -132,7 +132,7 @@ def test_train_loop_reduces_loss_and_writes_checkpoints(tmp_path):
     losses = summary['losses']
     assert all(math.isfinite(x) for x in losses)
     assert losses[-1] < losses[0] * 0.6
-    assert math.isfinite(summary['val_losses'][-1])
+    assert math.isfinite(summary['val_masked_ce'][-1])
     assert (out / 'checkpoint-000200.pt').exists()
     assert (out / 'checkpoint-last.txt').read_text() == 'checkpoint-000200.pt'
     assert not list(out.glob('*.tmp'))
@@ -287,7 +287,7 @@ def test_p1_refuses_without_prerequisites(tmp_path):
     base = dict(bundle=str(root), out=str(tmp_path / 'run'))
     with pytest.raises(ValueError, match='P1 requested without prerequisites'):
         train(TrainConfig(**base, p1=True), log=lambda *a: None)
-    with pytest.raises(NotImplementedError, match='D1 architecture'):
+    with pytest.raises(ValueError, match='GPU cache/gradient/resume validation'):
         train(TrainConfig(**base, p1=True, profile='d1', device='cpu'), log=lambda *a: None)
     with pytest.raises(ValueError, match='amp requires device=cuda'):
         train(TrainConfig(**base, amp=True), log=lambda *a: None)
@@ -445,6 +445,7 @@ def test_schedule_logs_lr_used_and_reaches_minimum(tmp_path):
                       eval_every=0, checkpoint_every=4)
     records = []
     train(cfg, log=lambda line: records.append(json.loads(line)))
+    records = [row for row in records if 'step' in row]
     assert records[0]['lr'] == cfg.lr
     assert records[-1]['lr'] == pytest.approx(cfg.lr * 0.1)
     assert not any(r['optimizer_step_skipped'] for r in records)
@@ -506,3 +507,117 @@ def test_short_schedule_endpoints(steps, warmup):
 
     cfg = TrainConfig(bundle='unused', out='unused', steps=steps, warmup=warmup)
     assert lr_at(steps - 1, cfg) == pytest.approx(cfg.lr * (1.0 if steps == 1 else 0.1))
+
+
+def tiny_d1():
+    from scripts.d1_model import D1Config
+    return D1Config(d_model=16, n_layers=4, query_heads=2, kv_heads=1, head_dim=8,
+                    ffn_hidden=32, gdn_heads=2, gdn_key_dim=4, gdn_value_dim=8, block_size=4)
+
+
+def test_d1_training_resume_restores_frontier_rng_and_token_counters(tmp_path):
+    from dataclasses import replace
+
+    root = make_bundle(tmp_path, shard_sequences=5)
+    cfg = TrainConfig(bundle=str(root), out=str(tmp_path / 'full'), profile='d1',
+                      mask_mode='blockwise', d1=tiny_d1(), steps=20, warmup=2,
+                      batch_size=3, grad_accum=3, lr=0.003, checkpoint_every=10,
+                      eval_every=10, eval_full=True)
+    full = train(cfg, log=lambda *args: None)
+    ckpt = tmp_path / 'full' / 'checkpoint-000010.pt'
+    resumed = train(replace(cfg, out=str(tmp_path / 'resumed')), resume=ckpt, log=lambda *a: None)
+    assert full['metric'] == 'masked_ce'
+    assert resumed['losses'] == full['losses'][10:]
+    assert resumed['val_masked_ce'] == full['val_masked_ce'][1:]
+    assert all(math.isfinite(value) for value in full['losses'])
+    assert full['losses'][-1] < full['losses'][0]
+    for name in ('step', 'tokens_seen', 'tokens_processed', 'tokens_scored'):
+        assert resumed[name] == full[name]
+    assert 0 < full['tokens_scored'] < full['tokens_processed'] < full['tokens_seen']
+    a = load_checkpoint(tmp_path / 'full' / 'checkpoint-000020.pt')
+    b = load_checkpoint(tmp_path / 'resumed' / 'checkpoint-000020.pt')
+    for name in a['model']:
+        assert torch.equal(a['model'][name], b['model'][name]), name
+    assert a['loader'] == b['loader'] and a['scheduler'] == b['scheduler']
+    assert torch.equal(a['rng']['torch'], b['rng']['torch'])
+    payload = load_checkpoint(ckpt)
+    payload['tokens_processed'] = payload['tokens_seen'] + 1
+    save_checkpoint(tmp_path / 'bad-counts.pt', payload)
+    with pytest.raises(ValueError, match='processed/scored'):
+        train(cfg, resume=tmp_path / 'bad-counts.pt', log=lambda *a: None)
+    with pytest.raises(ValueError, match='config hash mismatch'):
+        train(replace(cfg, d1=replace(cfg.d1, conv_width=3)), resume=ckpt, log=lambda *a: None)
+
+
+def test_d1_full_validation_covers_frontiers_and_keeps_training_rng(tmp_path, monkeypatch):
+    import scripts.train_diffusion as training
+
+    root = make_bundle(tmp_path)
+    cfg = TrainConfig(bundle=str(root), out=str(tmp_path / 'run'), profile='d1',
+                      mask_mode='blockwise', d1=tiny_d1(), batch_size=8)
+    model = build_model(cfg, VOCAB, SEQ).eval()
+    original = training.block_diffusion_mask
+    frontiers = []
+    def track(*args, **kwargs):
+        frontiers.append(kwargs.get('frontier'))
+        return original(*args, **kwargs)
+    monkeypatch.setattr(training, 'block_diffusion_mask', track)
+    before = torch.get_rng_state().clone()
+    first = evaluate(cfg, model, VOCAB, SEQ, batches=None)
+    assert frontiers == [0, 1] * 5
+    assert torch.equal(torch.get_rng_state(), before)
+    assert not model.training
+    assert first == evaluate(cfg, model, VOCAB, SEQ, batches=None)
+
+
+def test_d1_cli_loads_explicit_architecture_config(tmp_path, capsys):
+    from dataclasses import asdict
+
+    root = make_bundle(tmp_path)
+    config = tmp_path / 'd1.json'
+    config.write_text(json.dumps(asdict(tiny_d1())))
+    capsys.readouterr()
+    main(['--bundle', str(root), '--out', str(tmp_path / 'cli'), '--profile', 'd1',
+          '--d1-config', str(config), '--steps', '2', '--warmup', '0', '--eval-every', '1'])
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records[0]['model'] == 'd1' and records[0]['params'] > 0
+    assert records[-1]['metric'] == 'masked_ce'
+    assert records[-1]['step'] == 2
+    assert all('val_masked_ce' in row for row in records[1:-1])
+    saved = json.loads((tmp_path / 'cli' / 'config.json').read_text())
+    assert saved['d1'] == asdict(tiny_d1())
+    assert saved['mask_mode'] == 'blockwise'
+
+
+def test_mismatched_model_and_mask_mode_are_rejected(tmp_path):
+    with pytest.raises(ValueError, match='D1 requires blockwise'):
+        train(TrainConfig(bundle='unused', out=str(tmp_path), profile='d1'))
+    with pytest.raises(ValueError, match='smoke requires classical'):
+        train(TrainConfig(bundle='unused', out=str(tmp_path), mask_mode='blockwise'))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason='D1 CUDA AMP resume needs real GPU hardware')
+def test_d1_cuda_amp_checkpoint_resume(tmp_path):
+    from dataclasses import replace
+    from scripts.d1_model import D1Config
+
+    pytest.importorskip('fla', reason='install pinned requirements-d1.txt on the GPU host')
+    root = make_bundle(tmp_path, seq=64, train_tokens=1280, validation_tokens=1280)
+    architecture = D1Config(d_model=32, n_layers=4, query_heads=4, kv_heads=2, head_dim=8,
+                            ffn_hidden=64, gdn_heads=2, gdn_key_dim=16, gdn_value_dim=32)
+    cfg = TrainConfig(bundle=str(root), out=str(tmp_path / 'full'), profile='d1',
+                      mask_mode='blockwise', d1=architecture, device='cuda', amp=True,
+                      gdn_backend='fla', steps=6, warmup=1, checkpoint_every=3,
+                      eval_every=3, eval_batches=1, batch_size=2, grad_accum=2)
+    full = train(cfg, log=lambda *a: None)
+    ckpt = tmp_path / 'full' / 'checkpoint-000003.pt'
+    resumed = train(replace(cfg, out=str(tmp_path / 'resumed')), resume=ckpt, log=lambda *a: None)
+    assert resumed['losses'] == pytest.approx(full['losses'][3:], rel=1e-3, abs=1e-3)
+    for key in ('tokens_seen', 'tokens_processed', 'tokens_scored'):
+        assert resumed[key] == full[key]
+    a = load_checkpoint(tmp_path / 'full' / 'checkpoint-000006.pt')
+    b = load_checkpoint(tmp_path / 'resumed' / 'checkpoint-000006.pt')
+    assert a['loader'] == b['loader'] and a['scheduler'] == b['scheduler']
+    assert a['rng']['cuda'] is not None and b['rng']['cuda'] is not None
+    for name in a['model']:
+        torch.testing.assert_close(a['model'][name], b['model'][name], rtol=1e-3, atol=5e-4, msg=name)

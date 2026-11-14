@@ -5,6 +5,14 @@
 decode/cache experiments, and evaluation: the only metric it computes is masked
 cross-entropy on the bundle's own validation split.
 
+As of 2026-11-14, `--profile d1` implements the forward-GDN/GQA hybrid and
+blockwise objective. The default remains the original small smoke transformer.
+See [D1 architecture and usage](D1_ARCHITECTURE.md) for the exact model, cache
+contract, accelerated dependency, validation commands and pending GPU gates.
+The notes below about the earlier integration describe the smoke pipeline;
+D1 changes are specified in that document. Current checkpoints use format 4,
+and validation logs use `val_masked_ce` rather than `val_loss`.
+
 ## Usage
 
 ```bash
@@ -26,7 +34,7 @@ python scripts/train_diffusion.py --bundle ... --out /tmp/train-run \
 python scripts/train_diffusion.py --bundle ... --out /tmp/train-run \
   --device cuda --amp --grad-accum 8 --batch-size 8
 
-# P1 guard: exits 2 listing missing prerequisites (D1 is not implemented)
+# P1 guard: exits 2; GPU validation and measured P0 are still pending
 python scripts/train_diffusion.py --bundle ... --out /tmp/train-run --p1
 
 # Resume from an exact checkpoint; the config hash must match
@@ -73,8 +81,8 @@ The bundle is never modified. Shards are opened read-only with `np.memmap`.
   `checkpoint-last.txt` names the newest
   checkpoint. Resuming rejects a different config hash, corpus provenance, or
   cursor/token/step inconsistency, including partial batches and completed epochs.
-  Format 3 rejects earlier checkpoints because the LR schedule and overflow
-  semantics changed. A failed integrity or progress check always rejects resume.
+  Format 4 rejects earlier checkpoints because the architecture, counters
+  and metric contract changed. A failed integrity or progress check always rejects resume.
 
 ## Assumptions
 
@@ -101,7 +109,8 @@ Implemented against the draft:
   from `U(0.10, 0.90)`; EOS and reserved ids are excluded. The old
   exact-count scheduler is gone; the first eligible token is still forced when
   Bernoulli draws select none, a documented short-row bias.
-  `mask_mode=classical` is recorded in the run config; blockwise masking is rejected as an unimplemented gap.
+  `mask_mode=classical` is recorded in the run config. D1 uses the separate blockwise objective described in
+  `D1_ARCHITECTURE.md`.
 - Gradient accumulation (`--grad-accum`) and CUDA AMP (`--amp`) are wired into
   the training loop. AMP uses fp16 autocast with fp32 master weights and a
   `GradScaler`; its state is checkpointed.
@@ -115,19 +124,19 @@ Implemented against the draft:
   versions and git commit are recorded, not compatibility-checked on resume.
 - `--p1` is a hard guard. It refuses to run without `profile=d1`, `device=cuda`,
   `amp=true`, `eval_full=true`, `verify_hashes=true`, and a 64-sequence global
-  batch. `profile=d1` itself raises `NotImplementedError` because the D1
-  architecture is not implemented.
+  batch. `profile=d1` now constructs the real hybrid. P1 stays blocked pending
+  actual GPU checks and a measured P0 probe.
 
 Remaining gaps, explicitly not claimed as D1-ready:
 
-- The model is still the ~2.2M-param smoke transformer, not the D1 100M GDN
-  hybrid (16 blocks, d_model 640, 12 GDN + 4 GQA attention, SwiGLU, RMSNorm).
+- The default model remains the ~2.2M-param smoke transformer. D1 is an
+  implemented, separate 109M profile; its GPU validation remains pending.
 - No GPU run was verified in this integration. CUDA AMP, accumulation, and
   masking still need an actual GPU run. No P1 throughput, loss, or convergence
   claim is made.
-- No blockwise-aligned masking, denoiser-round unrolling,
-  production checkpoint retention, full-corpus training run,
-  gPPL/MBPP, or decode-policy integration.
+- D1 now implements blockwise masking and a development decoder. Denoiser-round
+  training unrolling, production checkpoint retention, full-corpus training,
+  gPPL/MBPP and frozen decode-policy integration are still absent.
 - The draft recipe may still change; this code follows the 2026-11-13 draft.
 
 ## Validation
@@ -175,18 +184,19 @@ its 5,480-row tail produces a partial batch at micro-batch 16.
 
 ## Limitations
 
-- The D1 100M architecture is not implemented. The model is a ~2.2M-param smoke
-  transformer; `--p1` and `profile=d1` refuse to run rather than mislabel it.
+- D1 is implemented as a separate 109M profile. `--p1` remains blocked until
+  GPU correctness and P0 measurements are available.
 - AMP and gradient accumulation are implemented; CUDA execution is unvalidated
   in this integration because this machine has CPU-only PyTorch.
 - No distributed training, fused optimizer, or production checkpoint retention.
 - GPU bitwise reproducibility is not guaranteed; CPU resume is exact in tests.
-- No block-diffusion decode objective, remasking schedule, or denoiser-step
-  sampling; this trains a masked-token predictor, not the full D1 recipe.
+- The smoke profile trains classical masked-token prediction. D1 has blockwise
+  training and a fixed-length development decoder, with no benchmark-policy
+  integration, looping or quality/convergence claim.
 - Validation is a sample by default; `--eval-full` covers one full pass but is
   not run at 100M-token scale here.
 - Resume determinism is verified on CPU exactly. CUDA and multi-GPU resume
-  were not tested here. Checkpoint versions before 3 are rejected.
+  were not tested here. Checkpoint versions before 4 are rejected.
 - The loader holds one memmap per shard at a time and validates target ranges on
   every batch, which is intentionally simple rather than throughput-optimal.
 - Training throughput and convergence at 100M-token scale were not measured.
