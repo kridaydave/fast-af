@@ -106,7 +106,7 @@ python -m scripts.validate_d1 --device cpu --forward-only --out /tmp/d1-cpu.json
 # Original small classical-mask smoke transformer is still available.
 python scripts/train_diffusion.py --bundle /path/to/bundle --out /tmp/smoke
 
-# GPU host: use an isolated environment and a compatible CUDA PyTorch build.
+# SM80+ GPU host: use an isolated environment and a compatible CUDA PyTorch build.
 python -m pip install -r requirements-data.txt -r requirements-d1.txt
 python -m scripts.validate_d1 --device cuda --out /tmp/d1-cuda.json
 python -m pytest tests/test_d1_model.py::test_fla_cuda_outputs_states_and_gradients_match_torch \
@@ -122,7 +122,7 @@ python scripts/train_diffusion.py --bundle /path/to/bundle --out /tmp/d1-dev \
 The FLA source is pinned to `2705ab8ee9a9086bcfa6d079858e4281e01215a1`.
 The adapter requires that installation revision, CUDA, and fp16 autocast. It
 fails instead of falling back when the dependency or kernel is unavailable.
-This pin is a reproducibility choice, not evidence of T4 support. Runtime
+Modern [Triton supports NVIDIA compute capability 8.0+](https://github.com/triton-lang/triton/blob/main/README.md), while [NVIDIA lists T4 as 7.5](https://developer.nvidia.com/cuda/gpus). Therefore the pinned FLA backend explicitly rejects T4/SM75. An accelerated T4-compatible implementation is an unresolved deployment blocker; it is not merely untested support. Runtime
 versions are recorded and backend-version changes reject resume.
 
 `scripts/validate_d1.py` defaults to CUDA and exits 2 with a SKIP report when
@@ -142,7 +142,8 @@ The original integration report describes the state at `fda920e`; its statement
 that D1 did not exist is historical. Current implementation evidence is stored
 separately under `.verify/d1-implementation/` after checks complete.
 
-Before P1: run the pinned kernel on actual T4 hardware, verify accelerated/reference
+Before P1: resolve the T4-compatible accelerated backend, or explicitly revise
+the available-hardware plan. On supported hardware verify accelerated/reference
 outputs and gradients, verify AMP checkpoint/resume, and measure P0 with the
 real corpus and production batch. Freeze a revised budget using actual processed
 and scored tokens. `--p1` remains blocked until that work is reviewed. There is

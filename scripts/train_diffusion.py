@@ -29,10 +29,10 @@ import torch.nn.functional as F
 
 if __package__:
     from .prepare_corpus import canonical, digest, filehash
-    from .d1_model import D1Config, D1LM, backend_info
+    from .d1_model import D1Config, D1LM, backend_info, require_fla_device
 else:
     from prepare_corpus import canonical, digest, filehash
-    from d1_model import D1Config, D1LM, backend_info
+    from d1_model import D1Config, D1LM, backend_info, require_fla_device
 
 SCHEMA = 'training-mixture/v1'
 MASK_ID = 0
@@ -475,6 +475,8 @@ def _validate(cfg):
         raise ValueError('D1 requires blockwise masking; smoke requires classical masking')
     if cfg.profile == 'd1' and cfg.gdn_backend == 'fla' and not (cfg.device == 'cuda' and cfg.amp):
         raise ValueError('FLA backend requires device=cuda and amp=true')
+    if cfg.profile == 'd1' and cfg.gdn_backend == 'fla':
+        require_fla_device(cfg.device)
 
 
 def lr_at(step, cfg):

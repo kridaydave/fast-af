@@ -227,3 +227,17 @@ def test_invalid_backend_does_not_fall_back_to_reference(tiny):
                       lambda: GatedDeltaNet(tiny, 'typo'), lambda: backend_info('typo')):
         with pytest.raises(ValueError, match='backend must be torch or fla'):
             construct()
+
+
+def test_t4_policy_rejection_precedes_kernel_import_or_allocation(monkeypatch):
+    # Simulates a hardware *error path* only; executes no CUDA model or kernel.
+    import argparse
+    from scripts.validate_d1 import validate
+
+    monkeypatch.setattr(torch.cuda, 'is_available', lambda: True)
+    monkeypatch.setattr(torch.cuda, 'get_device_capability', lambda device: (7, 5))
+    report, status = validate(argparse.Namespace(device='cuda', config=None, vocab_size=32000,
+                                               forward_only=False))
+    assert status == 1 and report['status'] == 'FAIL'
+    assert 'T4/SM75 is unsupported' in report['error']
+    assert not report['checks'] and 'params' not in report
