@@ -95,11 +95,65 @@ def gated_delta_reference(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         return torch.stack(outputs, dim=1), state
 
 
+def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
+                        decay: torch.Tensor, beta: torch.Tensor,
+                        initial_state: torch.Tensor | None = None,
+                        chunk_size: int = 32) -> tuple[torch.Tensor, torch.Tensor]:
+    """Parallelize each chunk with a unit-lower-triangular solve, using PyTorch.
+
+    Same recurrence, normalized q/k and FP32 state as gated_delta_reference.
+    The solve computes residual updates together; only chunk boundaries recur.
+    Uses ordinary CUDA BLAS operations, not Triton/TF32 or custom CUDA code.
+    """
+    if type(chunk_size) is not int or chunk_size < 1:
+        raise ValueError('chunk_size must be a positive integer')
+    if (q.ndim != 4 or q.shape != k.shape or v.shape[:3] != q.shape[:3]
+            or decay.shape != q.shape[:3] or beta.shape != decay.shape or not q.shape[1]):
+        raise ValueError('incompatible gated delta tensor shapes')
+    with torch.autocast(device_type=q.device.type, enabled=False):
+        q, k, v, decay, beta = (x.transpose(1, 2).float() for x in (q, k, v, decay, beta))
+        batch, heads, length, key_dim = q.shape
+        value_dim = v.shape[-1]
+        padding = (-length) % chunk_size
+        q, k, v = (F.pad(x, (0, 0, 0, padding)) for x in (q, k, v))
+        decay, beta = (F.pad(x, (0, padding)) for x in (decay, beta))
+        chunks = (length + padding) // chunk_size
+        q, k, v = (x.reshape(batch, heads, chunks, chunk_size, x.shape[-1]) for x in (q, k, v))
+        cumulative = decay.reshape(batch, heads, chunks, chunk_size).cumsum(-1)
+        beta = beta.reshape(batch, heads, chunks, chunk_size, 1)
+        lower = torch.ones(chunk_size, chunk_size, device=q.device, dtype=torch.bool).tril()
+        # Mask before exp: upper-triangle differences can overflow for strong decay.
+        differences = cumulative[..., :, None] - cumulative[..., None, :]
+        relative_decay = differences.masked_fill(~lower, -torch.inf).exp()
+        identity = torch.eye(chunk_size, device=q.device)
+        system = identity + ((beta * k) @ k.transpose(-1, -2) * relative_decay).tril(-1)
+        rhs = torch.cat((beta * v, beta * cumulative.exp()[..., None] * k), dim=-1)
+        transformed = torch.linalg.solve_triangular(system, rhs, upper=False, unitriangular=True)
+        base_values, state_weights = transformed.split((value_dim, key_dim), dim=-1)
+        state = (v.new_zeros(batch, heads, key_dim, value_dim)
+                 if initial_state is None else initial_state.float())
+        outputs = []
+        for index in range(chunks):
+            queries, keys = q[:, :, index] / math.sqrt(key_dim), k[:, :, index]
+            log_decay = cumulative[:, :, index]
+            updates = base_values[:, :, index] - state_weights[:, :, index] @ state
+            attention = queries @ keys.transpose(-1, -2) * relative_decay[:, :, index]
+            output = (queries * log_decay.exp()[..., None]) @ state + attention @ updates
+            outputs.append(output)
+            end_weights = (log_decay[..., -1:] - log_decay).exp()
+            state = (state * log_decay[..., -1, None, None].exp()
+                     + (keys * end_weights[..., None]).transpose(-1, -2) @ updates)
+        output = torch.cat(outputs, dim=2)[:, :, :length].transpose(1, 2).contiguous()
+        return output, state
+
+
 def backend_info(backend: str) -> dict[str, str]:
-    if backend not in ('torch', 'fla'):
-        raise ValueError('GDN backend must be torch or fla')
+    if backend not in ('torch', 'chunk', 'fla'):
+        raise ValueError('GDN backend must be torch, chunk or fla')
     if backend == 'torch':
         return {'name': 'torch-reference', 'torch': torch.__version__}
+    if backend == 'chunk':
+        return {'name': 'torch-chunked', 'version': '1', 'chunk_size': '32', 'torch': torch.__version__}
     try:
         distribution = importlib.metadata.distribution('flash-linear-attention')
         direct = json.loads(distribution.read_text('direct_url.json') or '{}')
@@ -150,8 +204,8 @@ class CausalConv(nn.Module):
 class GatedDeltaNet(nn.Module):
     def __init__(self, cfg: D1Config, backend: str):
         super().__init__()
-        if backend not in ('torch', 'fla'):
-            raise ValueError('GDN backend must be torch or fla')
+        if backend not in ('torch', 'chunk', 'fla'):
+            raise ValueError('GDN backend must be torch, chunk or fla')
         self.cfg, self.backend = cfg, backend
         key, value = cfg.gdn_heads * cfg.gdn_key_dim, cfg.gdn_heads * cfg.gdn_value_dim
         self.q_proj = nn.Linear(cfg.d_model, key, bias=False)
@@ -190,6 +244,8 @@ class GatedDeltaNet(nn.Module):
             output, final = fla_operator()(
                 q=q.to(v.dtype), k=k.to(v.dtype), v=v, g=decay, beta=beta,
                 initial_state=initial, output_final_state=use_cache)
+        elif self.backend == 'chunk':
+            output, final = gated_delta_chunked(q, k, v, decay, beta, initial)
         else:
             output, final = gated_delta_reference(q, k, v, decay, beta, initial)
         gate = self.g_proj(x).reshape(*x.shape[:2], c.gdn_heads, c.gdn_value_dim)
@@ -254,8 +310,8 @@ class D1LM(nn.Module):
     def __init__(self, vocab_size: int, seq_len: int, cfg: D1Config | None = None, backend: str = 'torch'):
         super().__init__()
         self.cfg = D1Config() if cfg is None else cfg
-        if backend not in ('torch', 'fla'):
-            raise ValueError('GDN backend must be torch or fla')
+        if backend not in ('torch', 'chunk', 'fla'):
+            raise ValueError('GDN backend must be torch, chunk or fla')
         if type(vocab_size) is not int or vocab_size < 6:
             raise ValueError('D1 vocab_size must be an integer of at least 6')
         if type(seq_len) is not int or seq_len < self.cfg.block_size or seq_len % self.cfg.block_size:

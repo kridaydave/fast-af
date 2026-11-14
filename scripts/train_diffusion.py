@@ -453,8 +453,8 @@ def _validate(cfg):
         raise ValueError('profile must be smoke or d1')
     if not isinstance(cfg.d1, D1Config):
         raise ValueError('d1 must be a D1Config')
-    if cfg.gdn_backend not in ('torch', 'fla'):
-        raise ValueError('gdn_backend must be torch or fla')
+    if cfg.gdn_backend not in ('torch', 'chunk', 'fla'):
+        raise ValueError('gdn_backend must be torch, chunk or fla')
     if cfg.p1:
         missing = ['GPU cache/gradient/resume validation and measured P0 throughput are pending']
         if cfg.profile != 'd1':
@@ -833,7 +833,7 @@ def main(argv=None):
     p.add_argument('--amp', action='store_true')
     p.add_argument('--profile', choices=('smoke', 'd1'), default='smoke')
     p.add_argument('--d1-config', type=Path, help='JSON D1Config; defaults to the frozen 16-layer model')
-    p.add_argument('--gdn-backend', choices=('torch', 'fla'), default='torch')
+    p.add_argument('--gdn-backend', choices=('torch', 'chunk', 'fla'), default='torch')
     p.add_argument('--p1', action='store_true')
     p.add_argument('--verify-hashes', action='store_true')
     a = p.parse_args(argv)

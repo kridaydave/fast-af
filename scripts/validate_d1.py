@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run real D1 cache/gradient checks on the selected device.
 
-Defaults to CUDA + pinned FLA. CPU reference checks must be requested explicitly.
+Defaults to CUDA + the T4-compatible chunked PyTorch backend. CPU reference checks must be requested explicitly.
 This is a synthetic-token correctness check, not a P0 throughput or P1 result.
 """
 import argparse
@@ -41,7 +41,7 @@ def validate(args: argparse.Namespace) -> tuple[dict[str, object], int]:
         torch.set_num_threads(1)
         torch.manual_seed(17)
         device = torch.device(args.device)
-        backend = 'fla' if args.device == 'cuda' else 'torch'
+        backend = getattr(args, 'backend', None) or ('chunk' if args.device == 'cuda' else 'torch')
         if backend == 'fla':
             require_fla_device(device)
         report.update(config=asdict(cfg), backend=backend_info(backend),
@@ -108,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--device', choices=('cpu', 'cuda'), default='cuda')
     parser.add_argument('--config', type=Path)
+    parser.add_argument('--backend', choices=('torch', 'chunk', 'fla'))
     parser.add_argument('--vocab-size', type=int, default=32000)
     parser.add_argument('--forward-only', action='store_true')
     parser.add_argument('--out', type=Path, required=True)

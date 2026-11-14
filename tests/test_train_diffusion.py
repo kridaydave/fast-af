@@ -515,12 +515,13 @@ def tiny_d1():
                     ffn_hidden=32, gdn_heads=2, gdn_key_dim=4, gdn_value_dim=8, block_size=4)
 
 
-def test_d1_training_resume_restores_frontier_rng_and_token_counters(tmp_path):
+@pytest.mark.parametrize('backend', ['torch', 'chunk'])
+def test_d1_training_resume_restores_frontier_rng_and_token_counters(tmp_path, backend):
     from dataclasses import replace
 
     root = make_bundle(tmp_path, shard_sequences=5)
     cfg = TrainConfig(bundle=str(root), out=str(tmp_path / 'full'), profile='d1',
-                      mask_mode='blockwise', d1=tiny_d1(), steps=20, warmup=2,
+                      mask_mode='blockwise', d1=tiny_d1(), gdn_backend=backend, steps=20, warmup=2,
                       batch_size=3, grad_accum=3, lr=0.003, checkpoint_every=10,
                       eval_every=10, eval_full=True)
     full = train(cfg, log=lambda *args: None)
