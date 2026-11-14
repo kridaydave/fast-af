@@ -1,0 +1,4 @@
+# Install into a separate GPU environment with an appropriate CUDA PyTorch build.
+# The CPU reference model needs only torch and requirements-data.txt.
+# Pin the actual accelerated operator source; GPU compatibility is unvalidated.
+flash-linear-attention[cuda] @ git+https://github.com/fla-org/flash-linear-attention.git@2705ab8ee9a9086bcfa6d079858e4281e01215a1

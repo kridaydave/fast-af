@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 """Minimal block-diffusion training pipeline over packed training-mixture/v1 shards.
 
-Loads uint16 shards, applies dynamic diffusion masking, trains a small
-bidirectional transformer, and writes resumable checkpoints. CPU by default,
+Loads uint16 shards, applies dynamic diffusion masking, trains the smoke
+transformer or D1 hybrid, and writes resumable checkpoints. CPU by default,
 with optional CUDA AMP and gradient accumulation.
 This module is independent of bench/ and the evaluation tooling; validation
 here is masked cross-entropy on the bundle's own validation split.
 
-The model is a pipeline smoke transformer, not the D1 GDN hybrid. `--p1` refuses
-to run unless the D1 architecture and its other prerequisites are present.
+Select the original smoke transformer or the D1 GDN/GQA hybrid. `--p1` stays
+blocked until actual GPU validation and P0 measurements are available.
 """
 from __future__ import annotations
 import argparse
+import importlib.metadata
 import json
 import math
 import os
 import platform
 import random
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -28,15 +29,17 @@ import torch.nn.functional as F
 
 if __package__:
     from .prepare_corpus import canonical, digest, filehash
+    from .d1_model import D1Config, D1LM, backend_info
 else:
     from prepare_corpus import canonical, digest, filehash
+    from d1_model import D1Config, D1LM, backend_info
 
 SCHEMA = 'training-mixture/v1'
 MASK_ID = 0
 FORBIDDEN_IDS = (0, 2, 3, 4)  # MASK, PAD, UNK, BOS; EOS=1 is a legal target
 RESERVED_IDS = (0, 1, 2, 3, 4)  # MASK, EOS, PAD, UNK, BOS are never masked
 SPECIAL_IDS = {'[MASK]': 0, '[EOS]': 1, '[PAD]': 2, '[UNK]': 3, '[BOS]': 4}
-CHECKPOINT_VERSION = 3
+CHECKPOINT_VERSION = 4
 
 
 def load_manifest(bundle, verify_hashes=False):
@@ -280,6 +283,41 @@ def diffusion_mask(targets, *, mask_id=MASK_ID, min_ratio=0.1, max_ratio=0.9,
     return targets.masked_fill(loss_mask, mask_id), loss_mask
 
 
+def block_diffusion_mask(targets, block_size, *, min_ratio=0.1, max_ratio=0.9,
+                         generator=None, frontier=None):
+    """Sample one shared frontier block; expose clean prefix and noisy frontier.
+
+    Future tokens are cropped, so neither recurrent nor attention paths can
+    access them. Sampling is uniform over blocks with eligible targets in the
+    micro-batch; an all-EOS frontier cannot yield a training loss.
+    """
+    if (type(block_size) is not int or block_size < 1 or targets.ndim != 2
+            or not targets.shape[0] or not targets.shape[1] or targets.shape[1] % block_size):
+        raise ValueError('sequence length must be divisible by block_size')
+    eligible = ~torch.isin(targets, torch.tensor(RESERVED_IDS, device=targets.device))
+    valid = eligible.reshape(targets.shape[0], -1, block_size).any(dim=(0, 2)).nonzero().flatten()
+    if not len(valid):
+        raise ValueError('no eligible targets in any frontier block')
+    if frontier is None:
+        index = torch.randint(len(valid), (), device=targets.device, generator=generator)
+        frontier = int(valid[index])
+    if type(frontier) is not int or not 0 <= frontier < targets.shape[1] // block_size:
+        raise ValueError('frontier block out of range')
+    start, end = frontier * block_size, (frontier + 1) * block_size
+    noisy, active_mask = diffusion_mask(targets[:, start:end], min_ratio=min_ratio,
+                                        max_ratio=max_ratio, generator=generator)
+    inputs = torch.cat((targets[:, :start], noisy), dim=1)
+    loss_mask = torch.cat((torch.zeros_like(targets[:, :start], dtype=torch.bool), active_mask), dim=1)
+    return inputs, loss_mask
+
+
+def corrupt_batch(cfg, targets, generator=None):
+    if cfg.mask_mode == 'blockwise':
+        return block_diffusion_mask(targets, cfg.d1.block_size, min_ratio=cfg.mask_min,
+                                    max_ratio=cfg.mask_max, generator=generator)
+    return diffusion_mask(targets, min_ratio=cfg.mask_min, max_ratio=cfg.mask_max, generator=generator)
+
+
 def masked_cross_entropy(logits, targets, loss_mask, reduction='mean'):
     """Cross-entropy over masked positions only."""
     if logits.shape[:2] != targets.shape or targets.shape != loss_mask.shape:
@@ -362,6 +400,8 @@ class TrainConfig:
     eval_batches: int = 8
     eval_full: bool = False
     profile: str = 'smoke'
+    d1: D1Config = field(default_factory=D1Config)
+    gdn_backend: str = 'torch'
     p1: bool = False
     verify_hashes: bool = False
 
@@ -395,8 +435,8 @@ def _validate(cfg):
         raise ValueError('lr and grad_clip must be > 0')
     if not 0.0 < cfg.mask_min < cfg.mask_max < 1.0:
         raise ValueError('mask rates must satisfy 0 < mask_min < mask_max < 1')
-    if cfg.mask_mode != 'classical':
-        raise ValueError('only classical masking is implemented; blockwise is a gap')
+    if cfg.mask_mode not in ('classical', 'blockwise'):
+        raise ValueError('mask_mode must be classical or blockwise')
     if cfg.weight_decay < 0:
         raise ValueError('weight_decay must be >= 0')
     if not 0.0 <= cfg.beta1 < 1.0 or not 0.0 <= cfg.beta2 < 1.0:
@@ -411,11 +451,12 @@ def _validate(cfg):
         raise ValueError('amp requires device=cuda')
     if cfg.profile not in ('smoke', 'd1'):
         raise ValueError('profile must be smoke or d1')
-    if cfg.profile == 'd1':
-        raise NotImplementedError(
-            'D1 architecture is not implemented; refusing to label the smoke model as D1')
+    if not isinstance(cfg.d1, D1Config):
+        raise ValueError('d1 must be a D1Config')
+    if cfg.gdn_backend not in ('torch', 'fla'):
+        raise ValueError('gdn_backend must be torch or fla')
     if cfg.p1:
-        missing = []
+        missing = ['GPU cache/gradient/resume validation and measured P0 throughput are pending']
         if cfg.profile != 'd1':
             missing.append('profile=d1')
         if cfg.device != 'cuda':
@@ -430,6 +471,10 @@ def _validate(cfg):
             missing.append('global batch 64 sequences')
         if missing:
             raise ValueError('P1 requested without prerequisites: ' + ', '.join(missing))
+    if (cfg.profile == 'd1') != (cfg.mask_mode == 'blockwise'):
+        raise ValueError('D1 requires blockwise masking; smoke requires classical masking')
+    if cfg.profile == 'd1' and cfg.gdn_backend == 'fla' and not (cfg.device == 'cuda' and cfg.amp):
+        raise ValueError('FLA backend requires device=cuda and amp=true')
 
 
 def lr_at(step, cfg):
@@ -462,9 +507,10 @@ def build_optimizer(model, cfg):
 
 
 def build_model(cfg, vocab, seq_len):
+    if cfg.profile == 'd1':
+        return D1LM(vocab, seq_len, cfg.d1, backend=cfg.gdn_backend)
     if cfg.profile != 'smoke':
-        raise NotImplementedError(
-            'D1 architecture is not implemented; refusing to run P1 with the smoke model')
+        raise ValueError('profile must be smoke or d1')
     return DiffusionLM(vocab, seq_len, cfg.d_model, cfg.n_layers, cfg.n_heads, cfg.mlp_ratio)
 
 
@@ -487,8 +533,13 @@ def optimizer_step(model, optimizer, scheduler, scaler, grad_clip):
 
 
 def library_versions():
-    return {'python': platform.python_version(), 'torch': torch.__version__,
-            'numpy': np.__version__}
+    versions = {'python': platform.python_version(), 'torch': torch.__version__,
+                'numpy': np.__version__}
+    try:
+        versions['fla'] = importlib.metadata.version('flash-linear-attention')
+    except importlib.metadata.PackageNotFoundError:
+        versions['fla'] = None
+    return versions
 
 
 def git_commit():
@@ -502,7 +553,7 @@ def git_commit():
 
 
 def checkpoint_payload(model, optimizer, scheduler, scaler, loader, step, tokens_seen,
-                       config_hash, provenance):
+                       config_hash, provenance, tokens_processed, tokens_scored):
     return {
         'format_version': CHECKPOINT_VERSION,
         'model': model.state_dict(),
@@ -512,12 +563,15 @@ def checkpoint_payload(model, optimizer, scheduler, scaler, loader, step, tokens
         'loader': loader.state_dict(),
         'step': step,
         'tokens_seen': tokens_seen,
+        'tokens_processed': tokens_processed,
+        'tokens_scored': tokens_scored,
         'config_hash': config_hash,
         'provenance': provenance,
         'rng': {'python': random.getstate(), 'numpy': np.random.get_state(),
                 'torch': torch.get_rng_state(),
                 'cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None},
         'library_versions': library_versions(),
+        'backend': backend_info(model.backend) if isinstance(model, D1LM) else None,
         'git_commit': git_commit(),
         'gpu': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
     }
@@ -551,7 +605,7 @@ def load_checkpoint(path, verify_integrity=True):
     payload = torch.load(path, map_location='cpu', weights_only=False)
     required = {'format_version', 'model', 'optimizer', 'scheduler', 'scaler',
                 'loader', 'step', 'tokens_seen', 'config_hash', 'provenance',
-                'rng', 'library_versions'}
+                'rng', 'library_versions', 'tokens_processed', 'tokens_scored'}
     if not isinstance(payload, dict) or not required <= set(payload):
         raise ValueError(f'not a training checkpoint: {path}')
     if payload['format_version'] != CHECKPOINT_VERSION:
@@ -572,31 +626,46 @@ def evaluate(cfg, model, vocab, seq_len, batches=8, device='cpu'):
     """Deterministic masked cross-entropy on the validation split.
 
     The value is weighted by masked tokens, not batch means. With batches=None
-    the loader is finite and the whole split is consumed exactly once.
+    the loader is finite and the whole split is consumed exactly once. D1 full
+    validation visits every frontier per batch, with fixed corruption draws.
     """
     loader = ShardLoader(cfg.bundle, 'validation', cfg.batch_size, cfg.seed + 1,
                          cfg.verify_hashes, vocab=vocab, finite=batches is None)
     generator = torch.Generator(device=device).manual_seed(cfg.seed + 1)
     total, count, batches_seen = 0.0, 0, 0
+    was_training = model.training
     model.eval()
-    with torch.no_grad():
-        while batches is None or batches_seen < batches:
-            try:
-                targets = next(loader)
-            except StopIteration:
-                break
-            targets = targets.to(device)
-            inputs, loss_mask = diffusion_mask(
-                targets, min_ratio=cfg.mask_min, max_ratio=cfg.mask_max, generator=generator)
-            masked = int(loss_mask.sum())
-            if not masked:
-                raise ValueError('empty loss mask in validation')
-            total += float(masked_cross_entropy(model(inputs), targets, loss_mask)) * masked
-            count += masked
-            batches_seen += 1
-    model.train()
+    try:
+        with torch.no_grad():
+            while batches is None or batches_seen < batches:
+                try:
+                    targets = next(loader).to(device)
+                except StopIteration:
+                    break
+                frontiers = (range(seq_len // cfg.d1.block_size)
+                             if cfg.profile == 'd1' and batches is None else [None])
+                for frontier in frontiers:
+                    if frontier is None:
+                        inputs, loss_mask = corrupt_batch(cfg, targets, generator)
+                    else:
+                        inputs, loss_mask = block_diffusion_mask(
+                            targets, cfg.d1.block_size, min_ratio=cfg.mask_min,
+                            max_ratio=cfg.mask_max, generator=generator, frontier=frontier)
+                    masked = int(loss_mask.sum())
+                    if not masked:
+                        continue  # all-EOS validation block
+                    with torch.autocast(device_type=torch.device(device).type,
+                                        dtype=torch.float16, enabled=cfg.amp):
+                        loss = masked_cross_entropy(model(inputs), targets[:, :inputs.shape[1]], loss_mask)
+                    if not bool(torch.isfinite(loss)):
+                        raise FloatingPointError('non-finite validation masked CE')
+                    total += float(loss) * masked
+                    count += masked
+                batches_seen += 1
+    finally:
+        model.train(was_training)
     if not count:
-        raise ValueError('empty validation split')
+        raise ValueError('empty validation loss mask')
     return total / count
 
 
@@ -617,16 +686,22 @@ def train(cfg, resume=None, log=print):
         torch.cuda.manual_seed_all(cfg.seed)
     model = build_model(cfg, vocab, seq_len)
     model.to(device)
+    params = sum(p.numel() for p in model.parameters())
+    backend = backend_info(cfg.gdn_backend) if cfg.profile == 'd1' else None
+    log(json.dumps({'model': cfg.profile, 'params': params, 'backend': backend,
+                    'metric': 'masked_ce'}))
     optimizer = build_optimizer(model, cfg)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: lr_at(step, cfg) / cfg.lr)
     scaler = torch.amp.GradScaler(device.type, enabled=cfg.amp)
     loader = ShardLoader(cfg.bundle, 'train', cfg.batch_size, cfg.seed, cfg.verify_hashes,
                          vocab=vocab)
-    step, tokens_seen = 0, 0
+    step, tokens_seen, tokens_processed, tokens_scored = 0, 0, 0, 0
     if resume:
         payload = load_checkpoint(resume)
         if payload['config_hash'] != config_hash:
             raise ValueError('resume rejected: config hash mismatch')
+        if payload.get('backend') != backend:
+            raise ValueError('resume rejected: GDN backend version mismatch')
         if payload['provenance'] != provenance:
             raise ValueError('resume rejected: corpus/tokenizer provenance mismatch')
         model.load_state_dict(payload['model'])
@@ -640,6 +715,10 @@ def train(cfg, resume=None, log=print):
         loader.load_state_dict(payload['loader'])
         step, tokens_seen = payload['step'], payload['tokens_seen']
         loader.validate_progress(step, cfg.grad_accum, tokens_seen)
+        tokens_processed, tokens_scored = payload['tokens_processed'], payload['tokens_scored']
+        if (type(tokens_processed) is not int or type(tokens_scored) is not int
+                or not 0 < tokens_scored <= tokens_processed <= tokens_seen):
+            raise ValueError('checkpoint processed/scored token counts are inconsistent')
         restore_rng(payload)
         log(f'resumed {resume} at step {step} tokens {tokens_seen}')
     if step >= cfg.steps:
@@ -648,23 +727,25 @@ def train(cfg, resume=None, log=print):
     (out / 'config.json').write_text(
         json.dumps({**asdict(cfg), 'config_hash': config_hash,
                     'provenance': provenance, 'library_versions': library_versions(),
+                    'model_params': params, 'metric': 'masked_ce', 'backend': backend,
                     'git_commit': git_commit(),
                     'gpu': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None},
                    indent=2, sort_keys=True) + '\n', encoding='utf-8')
     checkpoints, losses, val_losses = [], [], []
     for _ in range(step, cfg.steps):
         micro = []
-        masked_total, token_total = 0, 0
+        masked_total, token_total, processed_total = 0, 0, 0
         for _ in range(cfg.grad_accum):
             targets = next(loader).to(device)
-            inputs, loss_mask = diffusion_mask(
-                targets, min_ratio=cfg.mask_min, max_ratio=cfg.mask_max)
+            token_total += targets.numel()
+            inputs, loss_mask = corrupt_batch(cfg, targets)
+            targets = targets[:, :inputs.shape[1]]
+            processed_total += targets.numel()
             masked = int(loss_mask.sum())
             if not masked:
                 raise ValueError('empty loss mask in global batch')
             micro.append((inputs, targets, loss_mask, masked))
             masked_total += masked
-            token_total += targets.numel()
         optimizer.zero_grad(set_to_none=True)
         loss_sum = 0.0
         for inputs, targets, loss_mask, masked in micro:
@@ -685,34 +766,38 @@ def train(cfg, resume=None, log=print):
             raise FloatingPointError(f'non-finite loss at step {step + 1}')
         step += 1
         tokens_seen += token_total
-        record = {'step': step, 'loss': loss, 'lr': lr_used,
-                  'tokens_seen': tokens_seen, 'grad_norm': grad_norm if not skipped else None,
+        tokens_processed += processed_total
+        tokens_scored += masked_total
+        record = {'step': step, 'masked_ce': loss, 'lr': lr_used,
+                  'tokens_seen': tokens_seen, 'tokens_processed': tokens_processed,
+                  'tokens_scored': tokens_scored, 'grad_norm': grad_norm if not skipped else None,
                   'optimizer_steps': scheduler.last_epoch,
                   'optimizer_step_skipped': skipped}
         if cfg.eval_every and step % cfg.eval_every == 0:
-            record['val_loss'] = evaluate(cfg, model, vocab, seq_len,
+            record['val_masked_ce'] = evaluate(cfg, model, vocab, seq_len,
                                           batches=None if cfg.eval_full else cfg.eval_batches,
                                           device=device)
-            val_losses.append(record['val_loss'])
+            val_losses.append(record['val_masked_ce'])
         log(json.dumps(record))
-        losses.append(record['loss'])
+        losses.append(record['masked_ce'])
         if cfg.checkpoint_every and step % cfg.checkpoint_every == 0:
             path = out / f'checkpoint-{step:06d}.pt'
             save_checkpoint(path, checkpoint_payload(
                 model, optimizer, scheduler, scaler, loader, step, tokens_seen,
-                config_hash, provenance))
+                config_hash, provenance, tokens_processed, tokens_scored))
             (out / 'checkpoint-last.txt').write_text(path.name, encoding='utf-8')
             checkpoints.append(path.name)
     if not checkpoints or checkpoints[-1] != f'checkpoint-{step:06d}.pt':
         path = out / f'checkpoint-{step:06d}.pt'
         save_checkpoint(path, checkpoint_payload(
             model, optimizer, scheduler, scaler, loader, step, tokens_seen,
-            config_hash, provenance))
+            config_hash, provenance, tokens_processed, tokens_scored))
         checkpoints.append(path.name)
         (out / 'checkpoint-last.txt').write_text(path.name, encoding='utf-8')
-    return {'config_hash': config_hash, 'params': sum(p.numel() for p in model.parameters()),
+    return {'config_hash': config_hash, 'params': params, 'metric': 'masked_ce',
+            'tokens_processed': tokens_processed, 'tokens_scored': tokens_scored,
             'step': step, 'tokens_seen': tokens_seen, 'losses': losses,
-            'val_losses': val_losses, 'checkpoints': checkpoints}
+            'val_masked_ce': val_losses, 'checkpoints': checkpoints}
 
 
 def main(argv=None):
@@ -731,7 +816,7 @@ def main(argv=None):
     p.add_argument('--eval-full', action='store_true')
     p.add_argument('--mask-min', type=float, default=0.1)
     p.add_argument('--mask-max', type=float, default=0.9)
-    p.add_argument('--mask-mode', choices=('classical',), default='classical')
+    p.add_argument('--mask-mode', choices=('classical', 'blockwise'), default=None)
     p.add_argument('--d-model', type=int, default=64)
     p.add_argument('--n-layers', type=int, default=2)
     p.add_argument('--n-heads', type=int, default=4)
@@ -745,19 +830,25 @@ def main(argv=None):
     p.add_argument('--device', choices=('cpu', 'cuda'), default='cpu')
     p.add_argument('--amp', action='store_true')
     p.add_argument('--profile', choices=('smoke', 'd1'), default='smoke')
+    p.add_argument('--d1-config', type=Path, help='JSON D1Config; defaults to the frozen 16-layer model')
+    p.add_argument('--gdn-backend', choices=('torch', 'fla'), default='torch')
     p.add_argument('--p1', action='store_true')
     p.add_argument('--verify-hashes', action='store_true')
     a = p.parse_args(argv)
+    try:
+        d1 = D1Config(**json.loads(a.d1_config.read_text())) if a.d1_config else D1Config()
+    except (OSError, ValueError, TypeError) as error:
+        p.error(f'invalid D1 config: {error}')
     cfg = TrainConfig(bundle=a.bundle, out=a.out, seed=a.seed, batch_size=a.batch_size,
                       lr=a.lr, steps=a.steps, warmup=a.warmup,
                       checkpoint_every=a.checkpoint_every, eval_every=a.eval_every,
                       eval_batches=a.eval_batches, eval_full=a.eval_full,
-                      mask_min=a.mask_min, mask_max=a.mask_max, mask_mode=a.mask_mode,
+                      mask_min=a.mask_min, mask_max=a.mask_max, mask_mode=a.mask_mode or ('blockwise' if a.profile == 'd1' else 'classical'),
                       d_model=a.d_model, n_layers=a.n_layers,
                       n_heads=a.n_heads, grad_clip=a.grad_clip, grad_accum=a.grad_accum,
                       weight_decay=a.weight_decay, beta1=a.beta1, beta2=a.beta2,
                       eps=a.eps, threads=a.threads, device=a.device, amp=a.amp,
-                      profile=a.profile, p1=a.p1, verify_hashes=a.verify_hashes)
+                      profile=a.profile, d1=d1, gdn_backend=a.gdn_backend, p1=a.p1, verify_hashes=a.verify_hashes)
     try:
         summary = train(cfg, resume=a.resume)
     except (ValueError, OSError, RuntimeError, FloatingPointError) as error:

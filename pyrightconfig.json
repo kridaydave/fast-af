@@ -1,0 +1,4 @@
+{
+  "include": ["scripts/d1_model.py", "scripts/validate_d1.py"],
+  "typeCheckingMode": "basic"
+}

@@ -1,6 +1,6 @@
 # D1 training recipe and T4 pilot budget
 
-Draft for review, 2026-11-13. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The integrated implementation is the smoke pipeline described in `TRAINING_LOOP.md`; D1 remains blocked. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
+Architecture updated 2026-11-14; compute budget remains a draft. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; actual GPU checks and P0 measurements still block P1. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
 
 Labels follow repo practice. MEASURED means a repo run produced it. PAPER means a cited primary source. DERIVED means arithmetic from repo numbers. ESTIMATE means a guess that the probe must replace. UNCONFIRMED means not yet checked.
 
@@ -45,21 +45,21 @@ From `spec/edgefast-diff-100m.md`:
 
 | Component | Assumption |
 |---|---|
-| Size | about 100M params, expected near 105M, exact count verified in code before freezing |
+| Size | 109,137,632 parameters in the instantiated default 32k-vocabulary model |
 | Blocks | 16, d_model 640 |
-| Linear layers | 12 Gated DeltaNet |
-| Attention layers | 4, full attention, NoPE, at blocks 4, 8, 12, 16; head layout OPEN, see blocker below |
+| Linear layers | 12 forward GDN; 4 heads, key dim 128, value dim 256, output gate, causal conv width 4 |
+| Attention layers | 4 block-causal GQA, 10 query / 2 KV heads, head dim 64, NoPE; blocks 4, 8, 12, 16 |
 | FFN | SwiGLU, hidden 1728 |
 | Norm | RMSNorm, pre-norm |
 | Vocab | 32,000, tied input and output embeddings |
-| Train context | 1024 for the pilot; architecture supports 32k, but 32k is not tested here |
+| Train context | 1024 for the pilot; longer-context behavior is unvalidated |
 | Precision | fp16 training, fp32 master weights for P0-P2; int4 QAT deferred (see below) |
 
-Architecture blockers before G3: the spec combines d_model 640, head dim 128 and 2 KV heads. If the query projection also has width 640, that gives 5 query heads, which cannot be evenly grouped over 2 KV heads. Standard [PyTorch GQA](https://docs.pytorch.org/docs/2.15/generated/torch.nn.functional.scaled_dot_product_attention.html) requires the query-head count to be divisible by the KV-head count. Choose and implement a valid head layout or a separate query projection width, then recount parameters and FLOPs. The 12 GDN layers also need an explicit directionality and attention-mask contract; ordinary causal recurrence does not implement the all-position bidirectional objective below. Both are unresolved D1 design work, not capabilities of the smoke transformer.
+The previous five-query/two-KV layout was invalid for standard GQA. The implemented ten-query/two-KV layout preserves width 640. Forward GDN supplies recurrent state; attention provides bidirectional context inside each block. Every layer is block-causal across blocks. Prefix states remain independent of later noisy blocks, and each denoising round reuses the same entry state before a final clean commit pass. This is a specific engineering choice, not a claim of reproducing bidirectional Mamba or of measured T4 performance. See `D1_ARCHITECTURE.md` for code and validation commands.
 
-The tied 32k table is about 20.5M params, roughly a fifth of the target. GDN internals are not pinned in the spec, so the final count could land anywhere from about 100M to about 130M. The pipeline must print the exact count and hash the config before the first training step. Every compute number below is quoted per 100M and scales linearly with the verified count.
+The tied vocabulary table is 20,480,000 parameters. The exact full-model count includes GDN gates, convolution and normalization. Compute must be measured on that implementation and objective; parameter count alone is insufficient.
 
-Two spec/recipe reconciliations. First, the spec's architecture table lists int4 QAT from the start, but the quality fix-plan explicitly says not to chase int4 QAT before a quality baseline (`research/quality-fixplan-ernie.md` section 4, item 6). This recipe therefore freezes fp16 for P0-P2 and treats int4 QAT as a post-P2 product decision; if it is required, run a separate QAT pass after P2, not before. Second, the spec's train context is 32k, but the quality plan says long context is a v2 problem and all evals run at 1k (section 4, item 7). The pilot trains and evaluates at 1024; extending context is a P3 decision.
+Two spec/recipe reconciliations. First, the earlier spec listed int4 QAT from the start, but the quality fix-plan explicitly says not to chase int4 QAT before a quality baseline (`research/quality-fixplan-ernie.md` section 4, item 6). This recipe therefore freezes fp16 for P0-P2 and treats int4 QAT as a post-P2 product decision; if it is required, run a separate QAT pass after P2, not before. Second, the earlier spec targeted 32k context, but the quality plan says long context is a v2 problem and all evals run at 1k (section 4, item 7). The pilot trains and evaluates at 1024; extending context is a P3 decision.
 
 ### 2.3 Decode policy
 
@@ -69,28 +69,21 @@ Frozen elsewhere. The pipeline receives a decode-policy hash covering temperatur
 
 Stored token ids are clean targets. They contain no MASK, PAD, UNK, or BOS. Corruption happens in the training loop and is never written back to the shards. The corpus is already built this way.
 
-Default for P1, classical random masking:
+The implemented D1 objective is blockwise frontier masking:
 
-1. Take one packed 1024-token sequence from a shard.
-2. Sample one corruption rate r per sequence, drawn uniformly from 0.10 to 0.90 (PROPOSED; the probe can narrow it).
-3. Replace each token with MASK with probability r, except EOS and reserved ids.
-4. Score cross-entropy on masked positions only, averaged over masked tokens in the global batch. If a row with eligible tokens draws no mask, the smoke pipeline masks its first eligible token. This safeguard biases very short rows and must be recorded with the mask policy.
-5. No causal mask. Every position may attend to every position.
+1. Sample one shared active 32-token block per micro-batch, uniformly over blocks with eligible targets.
+2. Keep the prefix clean. Sample a corruption rate from 0.10 to 0.90 per sequence and mask eligible positions in the active block independently. Force its first eligible mask when that row draws none.
+3. Crop every block after the active block. Attention sees its own block and earlier blocks. GDN scans forward.
+4. Score masked cross-entropy only in the active block, token-weighted over the accumulated global batch. Prefix tokens are processed but not scored.
+5. At inference, reuse the same immutable clean-prefix cache for each denoising round and run a final clean block pass before committing the cache.
 
-This is the proposed baseline from the spec. It samples corruption rates between 0.10 and 0.90; behavior outside that range is not trained by this policy. The loss is plain mean cross-entropy, with no importance weighting by r. No chain of denoising steps is unrolled during pretraining. Few-round behavior is taught later in SFT and self-distillation, per spec recipe steps 2-3.
+The default small smoke transformer retains classical all-position Bernoulli masking. Its objective is distinct from D1. Full bidirectional attention over every block is not the D1 training function.
 
-Alternative, blockwise-aligned masking:
+The implementation reports `masked_ce` and `val_masked_ce`, not a sequence NLL or diffusion NELBO. No importance weighting or unrolled denoising chain is claimed. EOS remains an unmasked target boundary; the development decoder is fixed-length and does not establish learned EOS termination.
 
-1. Split the sequence into aligned blocks of 32 tokens.
-2. Choose one active block, or cycle through blocks by step.
-3. Prefix stays clean. Active block becomes MASK. Suffix stays clean in storage but is hidden by an attention mask.
-4. Score cross-entropy on the active block only.
+One sampled block gives far fewer scored tokens than full-sequence classical masking. Logs and checkpoints separately track consumed corpus tokens, processed prefix-plus-active tokens, and scored masked tokens. The following token counts and hour estimates are inherited context-consumption planning numbers, not measured scored-token budgets. They must be revised after P0 for this objective before P1 can be approved.
 
-This matches the decode-time pattern: clean prefix, bidirectional active block, hidden suffix. It costs a little more compute per scored token because the suffix is processed but not scored. Evidence is LLaDA-8B-Instruct with LoRA, arXiv 2508.19529, where the gain peaks when the training block size equals the decode block size. The magnitude at 100M from scratch is unmeasured. Treat it as a pilot decision, not a default.
-
-Attention mask contract: the corpus ships all-ones masks. The pipeline must build the mask the chosen objective needs. Classical masking uses all ones. Blockwise alignment uses a custom mask. The mask mode must be logged in every run config.
-
-EOS is never masked. Documents stay separated by EOS inside a packed sequence. Never pack across shard boundaries.
+`--eval-full` visits every frontier of every validation batch with fixed corruption seeds. That covers the validation contexts and all frontier positions using sampled masks; it does not score every token with probability one. It is more expensive than the old one-forward validation estimate.
 
 ## 4. Training recipe
 
@@ -132,7 +125,7 @@ Protocol:
 1. 50 warmup steps.
 2. Three timed windows of 50 steps each (150 timed steps, 200 total).
 3. Sync CUDA before and after each window.
-4. Count actual consumed tokens in each window, including partial batches. Log attempted batches, successful optimizer updates, and AMP overflows separately. Skipped updates consume tokens and compute but do not advance the LR schedule.
+4. Count actual consumed, processed and scored tokens in each window, including partial batches; report throughput for each denominator. Log attempted batches, successful optimizer updates, and AMP overflows separately. Skipped updates consume tokens and compute but do not advance the LR schedule.
 5. Report median tokens per second, spread, effective TFLOPS, and model FLOPs utilization.
 
 Model FLOPs utilization, or MFU, is effective TFLOPS divided by the T4's 65 TFLOPS fp16 peak. It tells us how much of the chip we actually use.
@@ -154,7 +147,7 @@ Train the unlooped D1 on the training-v1 corpus, 100M tokens first. This proves 
 Gates:
 
 1. No NaN and no loss explosion. Smoothed loss falls.
-2. Validation NLL at start, midpoint, and end decreases. Score all 983,040 validation tokens with fixed mask seeds and the training mask mode.
+2. Validation masked CE at start, midpoint, and end decreases. Visit all validation contexts and frontiers with fixed mask seeds and the training mask mode; report scored-token counts.
 3. Decode sanity at T=8 and T=16 on a small fixed text set. tokens_emitted near the target length, tokens_per_pass near 4.0 at T=8 and 2.0 at T=16 for block 32, entropy above the frozen floor (default 5 nats), no collapse into repeated punctuation. This uses the frozen decode policy and does not tune it.
 4. Checkpoint and resume verified by a controlled kill and restart. Step, tokens seen, shard cursor, and RNG states restore correctly.
 5. Exact param count, FLOPs per token, and config hash logged and matched.
@@ -173,13 +166,13 @@ Two about-100M twins on identical shards, identical optimizer family, identical 
 - Matched total training FLOPs within plus or minus 10%, ratio reported. For illustration only, equal-cost layers would give `(14 + 2*4)/16 = 1.375` times compute per token for B, and about 364M tokens for B at a 500M-token A budget. Actual hybrid layer costs, output projection, and backward unrolling must replace that illustration before freeze. Matched inference FLOPs within plus or minus 10% for any win claim.
 - One seed is allowed but must be labeled single-seed, low confidence, and needs larger margins. Two seeds preferred.
 
-Metric blocker before G3: masked validation cross-entropy is a single teacher-forced forward and has no decode-step T argument. The inherited spec calls it "validation NLL at 8 steps" without defining a T-dependent estimator. Freeze that estimator, or explicitly amend the decision protocol to use masked CE at matched training FLOPs plus separate T=8/T=16 generation metrics. Until then the following inherited PASS/FAIL criteria are planning text, not an executable gate. The smoke pipeline reports only masked CE, not sequence likelihood or a T-specific NLL.
+Metric definition: validation masked CE is a teacher-forced measurement with no decode-round argument. It is the primary training comparison at matched cumulative training FLOPs. Generative PPL and decode sanity are evaluated separately at T=8 and T=16, under the frozen policy and matched inference FLOPs. The development decoder does not replace that policy.
 
-Endpoints and kill criteria come from `spec/edgefast-diff-100m.md`:
+The revised decision rule preserves the existing CE margins while separating generation evidence:
 
-- PASS: arm B beats arm A on validation NLL at 8 steps at matched F_train, in both seeds, or by at least 1.0% in a single-seed run with the gPPL direction agreeing. Convergence diagnostics show S greater than 1 contributes. Arm B is no worse at 16 steps.
-- FAIL: no validation NLL win at matched F_train at 8 steps, delta below 0.5% single-seed or split across seeds.
-- INCONCLUSIVE: divergence, gate failure, protocol violation. One rerun at pilot scale per root cause. Equal TPS is never a pass condition.
+- PASS: B improves validation masked CE in both paired seeds, or by at least 1.0% for a labeled single-seed run. Generated-quality direction at T=8 must agree, with no deterioration at T=16 and matched training/inference compute. Diagnostics must show that extra iterations contribute. A CE win alone is not evidence of a few-round generation win.
+- FAIL: no masked-CE improvement at matched training FLOPs, improvement below 0.5% for a single-seed run, or conflicting seeds. A generation win that requires higher unmatched inference compute cannot establish PASS.
+- INCONCLUSIVE: a margin between those single-seed thresholds, divergence, gate failure, missing generation evidence or a protocol violation. Freeze the comparison protocol before P2; no new quality result is asserted here.
 
 ### P3: full pretrain, outside the pilot
 
@@ -241,13 +234,13 @@ Pilot-specific gates:
 
 HumanEval stays sealed for all D1 decisions until final evaluation. MBPP uses the test split of 500 problems, a frozen prompt template copied from arXiv 2108.07732 Appendix A, 256 max new tokens, and three seeds with median and min/max reported. The template text and hash must be recorded in every results file. It is UNCONFIRMED in the repo until copied.
 
-Eval budget: bound it. Validation NLL is cheap, a few minutes per checkpoint. gPPL costs about 0.06 T4-hours per config. MBPP costs about 0.10 T4-hours per config, so three seeds is 0.3. Run MBPP only at final checkpoints, at T=8 and T=16, with the S_decode grid on arm B only. Plan 5 to 8 T4-hours for all evaluation, and log actual cost.
+Eval budget: bound it. Full frontier validation cost is unmeasured and must be included in P0; the earlier single-forward estimate is not applicable. gPPL costs about 0.06 T4-hours per config. MBPP costs about 0.10 T4-hours per config, so three seeds is 0.3. Run MBPP only at final checkpoints, at T=8 and T=16, with the S_decode grid on arm B only. Plan 5 to 8 T4-hours for all evaluation, and log actual cost.
 
 ## 8. Compute budget
 
 ### Cost model
 
-Training FLOPs per token = 6N for forward and backward, plus a provisional attention-sequence term at seq 1024 of about 0.2N forward and 0.4N backward. For N=100M that is about 6.6e8 FLOPs per token; the dense 6N floor is 6.0e8. Parameter count alone is insufficient for the hybrid or looped arm: count layer operations, attention sequence length, tied output projection, and backward unrolling before freezing. The token-based T4-hour table below is insensitive to this 10% term; the FLOPs number is for the P2 matched-compute check. This matches `research/quality-fixplan-ernie.md` section 6, which used 6N and called the attention term small.
+The inherited provisional dense cost model uses training FLOPs per processed token = 6N for forward and backward, plus a provisional attention-sequence term at seq 1024 of about 0.2N forward and 0.4N backward. For N=100M that is about 6.6e8 FLOPs per token; the dense 6N floor is 6.0e8. Parameter count alone is insufficient for the hybrid or looped arm: count layer operations, attention sequence length, tied output projection, and backward unrolling before freezing. The table below predates the implemented frontier objective and is unvalidated; the FLOPs number is for the P2 matched-compute check. This matches `research/quality-fixplan-ernie.md` section 6, which used 6N and called the attention term small.
 
 Throughput anchors, all ESTIMATE until P0 measures them:
 
@@ -310,9 +303,9 @@ Uncertainty, stated plainly:
 Assumptions this recipe makes:
 
 1. The pipeline branch builds and owns loading, masking, training, and checkpointing. This document is its contract.
-2. fp16 training on T4, because T4 has no bf16; int4 QAT is deferred until after P2, and the pilot trains at 1024 context rather than the spec's 32k.
+2. fp16 training on T4, because T4 has no bf16; int4 QAT is deferred until after P2, and the pilot trains at 1024 context with longer context deferred.
 3. The corpus is reused as built for P1. The audit passed with n-gram and substring checks, but semantic contamination is not ruled out. An additional semantic pass is proposed, not completed.
-4. Classical random masking is the P1 default. Blockwise alignment is the untested alternative.
+4. D1 uses the implemented blockwise frontier objective; classical masking remains a separate smoke profile. Quality and throughput of D1 are unmeasured.
 5. Throughput anchors are ESTIMATES until P0 replaces them.
 6. Planning uses 30 GPU-hours per week and interruptible sessions; current provider quotas and GPU availability are unverified.
 7. The decode policy arrives frozen from the sampler track. This recipe does not tune it.
@@ -321,17 +314,17 @@ Assumptions this recipe makes:
 Open decisions for Kriday:
 
 1. Corpus mix. Keep 50/35/15 as built, or shift toward 30-35% code, 45-50% web, 15-20% math, as `research/hillclimb-quality-ernie.md` recommends. Shifting means rebuilding and reauditing the corpus, and it invalidates the current hashes.
-2. Mask mode. Classical random or blockwise-aligned. The cheapest answer is a 100-200M-token mask twin after P1, or folding the question into P2 planning.
+2. Mask mode is now implemented as blockwise frontier masking for D1. A classical-mask comparison would be a separate, explicitly budgeted experiment.
 3. Peak learning rate. 1e-3 proposed, range 5e-4 to 2e-3. Three 50-step screens cost about 0.2 to 0.5 T4-hours and can reject unstable settings; they do not establish a convergence-optimal LR.
 4. Pilot size. 100M for P1, then matched P2 compute referenced to 500M arm-A tokens, subject to the probe. A 1B arm-A reference is a stretch.
-5. Valid GQA head layout, GDN directionality, T-dependent validation definition, and exact param count. These block D1 and G3 until implemented and frozen.
+5. Architecture and metric definitions are implemented and recorded in `D1_ARCHITECTURE.md`. Hardware kernel checks, AMP resume and the measured budget still block G3/P1.
 6. Micro-batch. The probe picks among 4, 8, and 16.
 7. Number of seeds. Two is better. One is allowed with larger margins and a low-confidence label.
 8. Kernel stack. Validate the exact flash-linear-attention and causal-conv1d versions and their sm75 support before proposing them for T4; no such compatibility check was run here. Any change to the kernel stack changes the probe target. The current repo measurements are on the lean stack without them.
 9. Checkpoint retention and Drive space. A checkpoint is 1.4 to 2 GB, so retention needs a decision.
 10. Whether to run the full 3B pretrain at all if P2 fails. The fallback is a single base pretrain and a published negative result.
 11. Precision. The spec lists int4 QAT from the start; the quality plan says defer it until a baseline exists. This recipe freezes fp16 for P0-P2. Decide whether int4 QAT is a P3 gate or a post-P2 product run.
-12. Context. The spec's train context is 32k; the pilot uses 1024. Decide whether to extend context before P3, and budget the extra compute.
+12. Context. The pilot uses 1024; the earlier target was 32k. Decide whether to extend context before P3, and budget the extra compute.
 
 ## 10. Source ledger
 

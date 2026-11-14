@@ -1,0 +1,14 @@
+{
+  "d_model": 640,
+  "n_layers": 16,
+  "attention_every": 4,
+  "query_heads": 10,
+  "kv_heads": 2,
+  "head_dim": 64,
+  "ffn_hidden": 1728,
+  "gdn_heads": 4,
+  "gdn_key_dim": 128,
+  "gdn_value_dim": 256,
+  "conv_width": 4,
+  "block_size": 32
+}
