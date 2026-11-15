@@ -1,0 +1,46 @@
+{
+  "suite": {
+    "passed": 280,
+    "skipped": 2,
+    "scope": "all pytest files across main (264 passed, 2 skipped), cache (12 passed) and wiring (4 passed) invocations, each successful"
+  },
+  "ruff": {
+    "rules": "F",
+    "exit_code": 0
+  },
+  "compilation": {
+    "exit_code": 0
+  },
+  "type_checks": {
+    "mode": "basic",
+    "errors": 0,
+    "warnings": 0,
+    "scopes": [
+      [
+        "scripts/d1_model.py",
+        "scripts/validate_d1.py"
+      ],
+      [
+        "scripts/check_gdn_t4.py",
+        "scripts/check_d1_p0.py",
+        "scripts/evaluate_d1_checkpoint.py"
+      ]
+    ]
+  },
+  "local_cuda_available": false,
+  "gpu_checks": "real Colab reports; local GPU pytest cases skipped",
+  "visual_check": {
+    "chart": "throughput.html",
+    "preview_width": 728,
+    "content_height": 369,
+    "console_messages": []
+  },
+  "protected_checkouts": "preserved-checkouts.json",
+  "limitation": "The final overhead counter adapter has not itself been rerun on GPU; the evaluator it reports was run on all 960 contexts.",
+  "native_cli": {
+    "command": "python -m pytest tests/test_train_diffusion.py::test_d1_cli_loads_explicit_architecture_config -q",
+    "passed": 1,
+    "exit_code": 0,
+    "scope": "real CPU subprocess with a tiny D1 config, chunk backend and full cached validation; not a full-model GPU claim"
+  }
+}

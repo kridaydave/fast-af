@@ -1,0 +1,23 @@
+{
+  "d1-t4-gdn-20261114": {
+    "cli_exit_code": 0,
+    "events": [
+      "[2026-11-14 16:18:19] EVENT: session_created",
+      "[2026-11-14 16:33:35] EVENT: session_terminated"
+    ]
+  },
+  "d1-t4-gdn-check": {
+    "cli_exit_code": 0,
+    "events": [
+      "[2026-11-14 16:36:17] EVENT: session_created",
+      "[2026-11-14 16:57:52] EVENT: session_terminated"
+    ]
+  },
+  "d1-t4-speed": {
+    "cli_exit_code": 0,
+    "events": [
+      "[2026-11-15 05:29:10] EVENT: session_created",
+      "[2026-11-15 06:39:41] EVENT: session_terminated"
+    ]
+  }
+}

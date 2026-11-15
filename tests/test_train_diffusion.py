@@ -559,6 +559,7 @@ def test_d1_training_resume_restores_frontier_rng_and_token_counters(tmp_path, b
 
 def test_d1_full_validation_covers_frontiers_and_keeps_training_rng(tmp_path, monkeypatch):
     import scripts.train_diffusion as training
+    import scripts.evaluate_d1_checkpoint as cached_evaluation
 
     root = make_bundle(tmp_path)
     cfg = TrainConfig(bundle=str(root), out=str(tmp_path / 'run'), profile='d1',
@@ -569,7 +570,7 @@ def test_d1_full_validation_covers_frontiers_and_keeps_training_rng(tmp_path, mo
     def track(*args, **kwargs):
         frontiers.append(kwargs.get('frontier'))
         return original(*args, **kwargs)
-    monkeypatch.setattr(training, 'block_diffusion_mask', track)
+    monkeypatch.setattr(cached_evaluation, 'block_diffusion_mask', track)
     before = torch.get_rng_state().clone()
     first = evaluate(cfg, model, VOCAB, SEQ, batches=None)
     assert frontiers == [0, 1] * 5
@@ -580,14 +581,20 @@ def test_d1_full_validation_covers_frontiers_and_keeps_training_rng(tmp_path, mo
 
 def test_d1_cli_loads_explicit_architecture_config(tmp_path, capsys):
     from dataclasses import asdict
+    import subprocess
+    import sys
 
     root = make_bundle(tmp_path)
     config = tmp_path / 'd1.json'
     config.write_text(json.dumps(asdict(tiny_d1())))
     capsys.readouterr()
-    main(['--bundle', str(root), '--out', str(tmp_path / 'cli'), '--profile', 'd1',
-          '--d1-config', str(config), '--steps', '2', '--warmup', '0', '--eval-every', '1'])
-    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    script = Path(__file__).resolve().parents[1] / 'scripts/train_diffusion.py'
+    result = subprocess.run([sys.executable, str(script), '--bundle', str(root),
+              '--out', str(tmp_path / 'cli'), '--profile', 'd1', '--d1-config', str(config),
+              '--steps', '2', '--warmup', '0', '--eval-every', '1', '--eval-full',
+              '--gdn-backend', 'chunk'], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    records = [json.loads(line) for line in result.stdout.splitlines()]
     assert records[0]['model'] == 'd1' and records[0]['params'] > 0
     assert records[-1]['metric'] == 'masked_ce'
     assert records[-1]['step'] == 2

@@ -1,0 +1,19 @@
+import sys,subprocess,time,json
+from pathlib import Path
+root=Path('/content/d1-speed');phases=[]
+base=[sys.executable,'-u',str(root/'src/scripts/evaluate_d1_checkpoint.py'),'--checkpoint',str(root/'p0-run/checkpoint-000200.pt'),'--bundle',str(root/'full-bundle'),'--amp']
+for name,extra,cap in [('cache-reference-subset',['--reference','--max-batches','2'],180),('cache-subset',['--max-batches','2'],180),('cache-full',[],630)]:
+ start=time.monotonic()
+ with (root/f'{name}.log').open('w') as log:
+  try:r=subprocess.run(base+extra+['--out',str(root/f'{name}.json')],stdout=log,stderr=subprocess.STDOUT,timeout=cap);code=r.returncode
+  except subprocess.TimeoutExpired:code=124
+ phases.append({'phase':name,'exit_code':code,'wall_seconds':time.monotonic()-start})
+ (root/'cache-eval-phases.json').write_text(json.dumps(phases,indent=2))
+ if code:break
+ if name=='cache-subset':
+  a=json.loads((root/'cache-reference-subset.json').read_text())['evaluation'];b=json.loads((root/'cache-subset.json').read_text())['evaluation']
+  difference=abs(a['val_masked_ce']-b['val_masked_ce'])
+  valid=a['scored_tokens']==b['scored_tokens'] and a['contexts']==b['contexts'] and difference<=0.003
+  (root/'cache-parity.json').write_text(json.dumps({'status':'PASS' if valid else 'FAIL','contexts':a['contexts'],'scored_tokens':a['scored_tokens'],'loss_abs_error':difference,'allowed_abs_error':0.003,'reference_ce':a['val_masked_ce'],'cached_ce':b['val_masked_ce']},indent=2))
+  if not valid:code=1;break
+(root/'cached-eval-done.json').write_text(json.dumps({'exit_code':code}))

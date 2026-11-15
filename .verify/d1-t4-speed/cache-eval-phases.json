@@ -1,0 +1,17 @@
+[
+  {
+    "phase": "cache-reference-subset",
+    "exit_code": 0,
+    "wall_seconds": 24.34977339299985
+  },
+  {
+    "phase": "cache-subset",
+    "exit_code": 0,
+    "wall_seconds": 18.521610382999825
+  },
+  {
+    "phase": "cache-full",
+    "exit_code": 0,
+    "wall_seconds": 365.42481498700045
+  }
+]

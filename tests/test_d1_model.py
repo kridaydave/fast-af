@@ -46,6 +46,33 @@ def test_delta_rule_matches_affine_state_transition_and_gradients():
     assert torch.equal(initial, before)
 
 
+@pytest.mark.parametrize('backend', ['torch', 'chunk'])
+def test_scored_only_head_preserves_loss_and_all_parameter_gradients(tiny, backend):
+    from scripts.train_diffusion import masked_cross_entropy, model_masked_loss
+
+    torch.manual_seed(32)
+    dense = D1LM(64, 12, tiny, backend)
+    selected = D1LM(64, 12, tiny, backend)
+    selected.load_state_dict(dense.state_dict())
+    targets = torch.arange(5, 29).reshape(2, 12)
+    mask = torch.zeros_like(targets, dtype=torch.bool)
+    mask[0, 8:10] = True; mask[1, 10:] = True
+    noisy = targets.masked_fill(mask, 0)
+    full = dense(noisy)
+    torch.testing.assert_close(selected(noisy, logits_mask=mask), full[mask])
+    expected = masked_cross_entropy(full, targets, mask)
+    actual = model_masked_loss(selected, noisy, targets, mask)
+    torch.testing.assert_close(actual, expected)
+    expected.backward(); actual.backward()
+    for (name, a), (_, b) in zip(dense.named_parameters(), selected.named_parameters()):
+        assert a.grad is not None and b.grad is not None, name
+        torch.testing.assert_close(a.grad, b.grad, rtol=5e-5, atol=1e-6, msg=name)
+    # Clean prefix embeddings must still receive gradients through the hybrid.
+    assert selected.tokens.weight.grad[5].abs().sum() > 0
+    with pytest.raises(ValueError, match='logits_mask'):
+        selected(noisy, logits_mask=mask.long())
+
+
 def clone_cache(cache):
     result = []
     for state in cache.layers:

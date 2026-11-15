@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "source_sha256": {
+    "d1_model.py": "64bdfe8782b2eefe85ff7e8112ced95d0429503fdfcefcec0d6da582ab0593b4",
+    "train_diffusion.py": "b0cf1388b48f7258526fae5ad54a8a5a7e97801efa30d4223c8ede4f3058ce0a",
+    "evaluate_d1_checkpoint.py": "5db0d592ff264f94d2abacb4bfef30302bf15ec47a1676155ff5925fa1f7cea2"
+  },
+  "gpu": "Tesla T4",
+  "contexts": 32,
+  "frontiers": 32,
+  "loss_abs_error": 0.0,
+  "cpu_and_cuda_rng_unchanged": true,
+  "training_mode_restored": true
+}

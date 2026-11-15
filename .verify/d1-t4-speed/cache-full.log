@@ -1,0 +1,6 @@
+{"validation_progress": {"contexts": 160, "batches": 20, "scored_tokens": 82026, "processed_tokens": 322560, "score_passes": 640, "commit_passes": 620}}
+{"validation_progress": {"contexts": 320, "batches": 40, "scored_tokens": 165627, "processed_tokens": 645120, "score_passes": 1280, "commit_passes": 1240}}
+{"validation_progress": {"contexts": 480, "batches": 60, "scored_tokens": 247560, "processed_tokens": 967680, "score_passes": 1920, "commit_passes": 1860}}
+{"validation_progress": {"contexts": 640, "batches": 80, "scored_tokens": 328942, "processed_tokens": 1290240, "score_passes": 2560, "commit_passes": 2480}}
+{"validation_progress": {"contexts": 800, "batches": 100, "scored_tokens": 409297, "processed_tokens": 1612800, "score_passes": 3200, "commit_passes": 3100}}
+{"validation_progress": {"contexts": 960, "batches": 120, "scored_tokens": 491072, "processed_tokens": 1935360, "score_passes": 3840, "commit_passes": 3720}}

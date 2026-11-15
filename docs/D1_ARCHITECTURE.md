@@ -29,9 +29,10 @@ The full-width CPU forward/cache check uses that model, not a smaller stand-in.
 The GDN layer implements the ordinary forward gated delta rule. Its reference
 recurrence is differentiable FP32 PyTorch. There are two accelerated paths. The
 `fla` backend calls the existing FLA `chunk_gated_delta_rule` operator and needs
-SM80 or newer. The `chunk` backend is plain PyTorch CUDA: each 32-token chunk is
-one FP32 unit-lower-triangular solve, so the per-token Python loop disappears and
-the exact recurrence survives. Neither path invents a bidirectional GDN or
+SM80 or newer. The `chunk` backend is plain PyTorch CUDA: chunks up to 128 tokens use an FP32
+unit-lower-triangular solve, with smaller chunks for short inputs. Version 2
+batches state-independent work and collects chunk gradients without repeated
+full-tensor slice accumulation. The exact recurrence survives. Neither path invents a bidirectional GDN or
 claims to reproduce the bidirectional-Mamba model.
 
 The attention layers exchange information in both directions inside a block.
@@ -128,28 +129,35 @@ fails instead of falling back when the dependency or kernel is unavailable.
 Modern [Triton supports NVIDIA compute capability 8.0+](https://github.com/triton-lang/triton/blob/main/README.md), while [NVIDIA lists T4 as 7.5](https://developer.nvidia.com/cuda/gpus). The pinned FLA backend therefore rejects T4/SM75 by design. Runtime
 versions are recorded and backend-version changes reject resume.
 
-The `chunk` backend exists because of that limit. It needs no Triton, so it runs
-on SM75 and on any newer card. Select it with `--gdn-backend chunk`. A real T4
-run is recorded in `.verify/d1-t4/`, with these results on the 109,137,632
-parameter default model at context 1024:
+The `chunk` backend needs no Triton. Version 2 is validated on a real T4.
+Select it with `--gdn-backend chunk`. It also lets the trainer project only scored
+hidden positions to the vocabulary, while keeping full prefix computation and
+gradients. This preserves the objective and leaves decoding logits unchanged.
+The model still has 109,137,632 parameters. See the
+[evidence and exact source hashes](../.verify/d1-t4-speed/README.md).
 
 | Check | Result |
 |---|---|
-| Recurrence output, final state, input and parameter gradients vs the FP32 reference | PASS, six lengths (1 to 129) in FP32 and fp16, worst relative output error 6.1e-7 |
-| Layer parity, all 13 parameter gradients | PASS in FP32 and fp16 |
-| Full-model logits vs CPU | PASS, relative error 2.1e-6 FP32 and 2.1e-3 fp16 |
-| Full-model masked CE, 254 parameter gradients | PASS, CPU 10.5938692 against CUDA 10.5938702 FP32 and 10.5938034 fp16 |
-| AMP process resume | PASS. Losses bitwise equal, loader, scheduler, scaler and RNG equal, weights within 3.6e-4 |
-| Throughput, micro-batch 4, gradient accumulation 16 | 3,490 processed tokens/s full-context frontier, 3,173 uniform frontier, peak allocated 7.4 GiB of 15.6 GB |
+| Recurrence output, final state and all six input gradients | PASS, nine lengths 1 to 257 in FP32 and mixed precision, worst relative output error 1.34e-6 |
+| Layer parity, input and all 13 parameter gradients | PASS in FP32 and fp16 |
+| Full-model logits and committed cache vs CPU | PASS, relative logits error 2.08e-6 FP32 and 2.11e-3 fp16 |
+| Full-model dense-reference loss vs scored-only GPU head, all 254 parameter gradients | PASS, worst gradient relative L2 error 1.06e-5 FP32 and 6.73e-3 fp16 |
+| AMP process resume | PASS, six applied updates. Losses, loader, scheduler, scaler and Torch/CUDA RNG match; weight max error 2.87e-4 |
+| Short accumulated-batch probe, micro 8 / accumulation 8 | 8,464 processed tokens/s full context, 7,940 uniform frontier; peak allocated 12.19 GiB |
 
-The layer diagnostic produced non-finite gradients at loss scale 8192. The
-trainer now accepts `--amp-init-scale`; the checks use 256 and require six
-successful resume updates. This is a tested starting scale, not a promise of
-zero future overflows. Two short runs in one process were bitwise repeatable,
-while the cross-process resume comparison had small weight differences. Resume
-is therefore checked with tolerances. See the [evidence and scope](../.verify/d1-t4/README.md).
-Full-model forward/cache parity used 96 tokens and gradient parity used 32; the
-resume and timing jobs exercised the model at train context 1024.
+Full-model forward/cache parity used 96 tokens and gradient parity used 32;
+resume, throughput and production P0 used context 1024. These scopes should not
+be conflated. FP32 recurrent state and solves remain in use under fp16 autocast.
+GradScaler may skip an overflowing update without advancing the scheduler; the
+production warmup, unlike the short probe, exposed this and its counts are
+reported separately. Scale 256 passed initial parity but is not a promise of
+zero future overflows. The final calibrated scale is 8; fresh parity and process-resume checks passed
+at that scale. Set `--amp-init-scale 8` explicitly for the recommended T4 job.
+
+Backend metadata is now `torch-chunked`, version 2, maximum chunk size 128.
+Training resume rejects version-1 checkpoints rather than silently changing
+numerical execution. Parameter names and shapes remain unchanged. The earlier
+version-1 measurements remain available in `.verify/d1-t4/` as historical evidence.
 
 `scripts/validate_d1.py` defaults to CUDA and exits 2 with a SKIP report when
 CUDA is unavailable. It never substitutes CPU. On a selected device it checks
@@ -168,16 +176,16 @@ The original integration report describes the state at `fda920e`; its statement
 that D1 did not exist is historical. Current implementation evidence is stored
 separately under `.verify/d1-implementation/` after checks complete.
 
-Before P1: the native T4 backend passed the scoped parity checks. What
-remains open is speed: measured processed-token throughput is about 3.2k to 3.5k
-per second, which is below the 5,000 floor the old budget assumed, so the pilot
-cost estimate in `TRAINING_RECIPE_T4_PILOT.md` now uses measured numbers. On any
-supported hardware verify accelerated-to-reference outputs and gradients, verify
-AMP checkpoint/resume, and measure P0 with the real corpus and production batch.
-Freeze a revised budget using actual processed
-and scored tokens. `--p1` remains blocked until that work is reviewed. There is
-no production retention/upload or wall-time checkpoint cap, no long-context
-quality validation, no looping, no quantized training, and no new gPPL/MBPP result.
+Version 2 clears the 6,000 processed-token/s stop threshold on T4. Full-frontier validation now reuses clean-prefix caches and takes 5 minutes
+53 seconds for all 960 contexts; the production P0 protocol and timings are in the
+optimization evidence; the revised recipe uses separate consumed, processed and scored token
+counts and a six-GPU-hour ceiling for P0/P1. This does not satisfy the 13,000
+processed-token/s green band or establish a quality result.
+
+`--p1` remains blocked for protocol and operational review. Checkpoint retention,
+upload and the production wall-time controller still need an executable plan.
+The frozen decode evaluation policy, long-context quality, looping, quantized
+training, gPPL and MBPP results remain outside these infrastructure checks.
 
 Primary references: [Gated DeltaNet](https://arxiv.org/abs/2412.06464),
 [FLA operator](https://github.com/fla-org/flash-linear-attention/blob/2705ab8ee9a9086bcfa6d079858e4281e01215a1/fla/ops/gated_delta_rule/chunk.py),

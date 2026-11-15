@@ -14,13 +14,14 @@ def core_inputs(length, strong=False):
             torch.rand(2, length, 2), torch.randn(2, 2, 5, 7)]
 
 
-@pytest.mark.parametrize('length', [1, 17, 31, 32, 33, 65, 129])
+@pytest.mark.parametrize('length', [1, 17, 31, 32, 33, 65, 127, 128, 129, 257])
 @pytest.mark.parametrize('strong', [False, True])
-def test_chunk_outputs_states_and_all_input_gradients(length, strong):
+@pytest.mark.parametrize('chunk_size', [32, 128])
+def test_chunk_outputs_states_and_all_input_gradients(length, strong, chunk_size):
     torch.set_num_threads(1)
     inputs = [t.requires_grad_() for t in core_inputs(length, strong)]
     expected, expected_state = gated_delta_reference(*inputs)
-    actual, actual_state = gated_delta_chunked(*inputs)
+    actual, actual_state = gated_delta_chunked(*inputs, chunk_size=chunk_size)
     torch.testing.assert_close(actual, expected, rtol=2e-4, atol=2e-5)
     torch.testing.assert_close(actual_state, expected_state, rtol=2e-4, atol=2e-5)
     probes = torch.randn_like(expected), torch.randn_like(expected_state)

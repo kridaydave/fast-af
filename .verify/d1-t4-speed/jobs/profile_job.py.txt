@@ -1,0 +1,63 @@
+import sys,time,json,gc,types
+from pathlib import Path
+import torch
+from torch.nn import functional as F
+sys.path.insert(0,'/content/d1-speed/src')
+from scripts import d1_model as dm
+from scripts.train_diffusion import (TrainConfig,ShardLoader,block_diffusion_mask,
+ build_optimizer,optimizer_step,masked_cross_entropy)
+root=Path('/content/d1-speed'); torch.set_num_threads(1)
+assert torch.cuda.get_device_capability()==(7,5)
+torch.backends.cuda.matmul.allow_tf32=False;torch.backends.cudnn.allow_tf32=False
+result={'gpu':torch.cuda.get_device_name(),'torch':torch.__version__,'cuda':torch.version.cuda,'variants':[]}
+original=dm.gated_delta_chunked
+
+def attention(self,x,state=None,offset=0,use_cache=False):
+ c=self.cfg
+ q=self.q_proj(x).reshape(*x.shape[:2],c.query_heads,c.head_dim).transpose(1,2)
+ k,v=[p(x).reshape(*x.shape[:2],c.kv_heads,c.head_dim).transpose(1,2) for p in (self.k_proj,self.v_proj)]
+ if state is not None:k,v=torch.cat((state.keys,k),2),torch.cat((state.values,v),2)
+ allowed=(torch.arange(k.shape[2],device=x.device)//c.block_size)[None,:]<=(offset+torch.arange(x.shape[1],device=x.device))[:,None]//c.block_size
+ repeat=c.query_heads//c.kv_heads
+ output=F.scaled_dot_product_attention(q,k.repeat_interleave(repeat,dim=1),v.repeat_interleave(repeat,dim=1),attn_mask=allowed)
+ out=self.o_proj(output.transpose(1,2).reshape(*x.shape[:2],c.d_model))
+ return out,dm.AttentionState(k,v) if use_cache else None
+
+for label,sparse,expanded,chunk in [('baseline',False,False,32),('scored-head',True,False,32),('head-expanded-attention',True,True,32),('chunk64',True,True,64),('chunk128',True,True,128)]:
+ torch.manual_seed(73);torch.cuda.manual_seed_all(73)
+ dm.gated_delta_chunked=lambda *args,**kw:original(*args,**kw,chunk_size=chunk)
+ model=dm.D1LM(32000,1024,backend='chunk').cuda().train()
+ cfg=TrainConfig(bundle=str(root/'src/probe-bundle'),out='unused',profile='d1',gdn_backend='chunk',amp=True,device='cuda')
+ opt=build_optimizer(model,cfg);sched=torch.optim.lr_scheduler.LambdaLR(opt,lambda _:1.)
+ scaler=torch.amp.GradScaler('cuda',init_scale=256)
+ if expanded:
+  for m in model.modules():
+   if isinstance(m,dm.BlockAttention):m.forward=types.MethodType(attention,m)
+ targets=next(ShardLoader(cfg.bundle,batch_size=4,seed=17,vocab=32000)).cuda()
+ inputs,mask=block_diffusion_mask(targets,32,frontier=31)
+ hook=model.norm.register_forward_hook(lambda m,args,out:out[mask]) if sparse else None
+ def update():
+  opt.zero_grad(set_to_none=True)
+  with torch.autocast('cuda',dtype=torch.float16):
+   logits=model(inputs)
+   loss=F.cross_entropy(logits,targets[mask]) if sparse else masked_cross_entropy(logits,targets,mask)
+  scaler.scale(loss).backward()
+  norm,skipped=optimizer_step(model,opt,sched,scaler,1.)
+  return float(loss),norm,skipped
+ row={'variant':label,'chunk_size':chunk}
+ try:
+  for _ in range(2):update()
+  torch.cuda.synchronize();torch.cuda.reset_peak_memory_stats();start=time.monotonic()
+  updates=[update() for _ in range(3)];torch.cuda.synchronize()
+  row.update(seconds_per_micro=(time.monotonic()-start)/3,peak_allocated=torch.cuda.max_memory_allocated(),updates=updates)
+  if label in ('baseline','head-expanded-attention','chunk128'):
+   with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU,torch.profiler.ProfilerActivity.CUDA]) as p:update();torch.cuda.synchronize()
+   averages=p.key_averages()
+   row['top_ops']=[{'key':r.key,'cuda_us':r.self_device_time_total,'calls':r.count} for r in sorted(averages,key=lambda r:r.self_device_time_total,reverse=True)[:25]]
+   row['attention_ops']=[r.key for r in averages if 'attention' in r.key]
+  row['status']='PASS'
+ except Exception as e:row.update(status='FAIL',error=str(e))
+ result['variants'].append(row);(root/'profile.json').write_text(json.dumps(result,indent=2));print(json.dumps(row),flush=True)
+ if hook:hook.remove()
+ del model,opt,sched,scaler,targets,inputs,mask;gc.collect();torch.cuda.empty_cache()
+(root/'profile-done.json').write_text(json.dumps({'exit_code':0}))

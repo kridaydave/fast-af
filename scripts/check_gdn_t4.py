@@ -21,7 +21,7 @@ if not __package__:
 from scripts.d1_model import (D1Config, D1LM, GatedDeltaNet, GDNState, gated_delta_chunked,
                               gated_delta_reference)
 from scripts.train_diffusion import (TrainConfig, ShardLoader, block_diffusion_mask,
-    build_optimizer, load_checkpoint, masked_cross_entropy, optimizer_step)
+    build_optimizer, load_checkpoint, model_masked_loss, optimizer_step)
 
 # The saved T4 layer diagnostic overflows at scale 8192, including the input
 # gradient. Scale 256 passed parity and six applied checkpoint/resume updates.
@@ -49,7 +49,7 @@ def amp_context(enabled):
 
 def core_parity():
     results = []
-    for length in (1, 31, 32, 33, 65, 129):
+    for length in (1, 31, 32, 33, 65, 127, 128, 129, 257):
         for amp in (False, True):
             torch.manual_seed(100 + length)
             q = F.normalize(torch.randn(1, length, 4, 128), dim=-1)
@@ -155,6 +155,7 @@ def full_parity():
     # Full 109M parameter gradients against CPU reference on a masked 32-token block.
     targets = tokens[:,:32]
     noisy = targets.clone(); noisy[:,::2] = 0
+    mask = torch.zeros_like(noisy, dtype=torch.bool); mask[:,::2] = True
     cpu.train(); cpu.zero_grad(set_to_none=True)
     output = cpu(noisy)
     loss = F.cross_entropy(output[:,::2].flatten(0,1), targets[:,::2].flatten())
@@ -164,8 +165,7 @@ def full_parity():
         optimizer = torch.optim.SGD(gpu.parameters(),lr=0)
         scaler = torch.amp.GradScaler('cuda',enabled=amp,init_scale=AMP_INIT_SCALE)
         with amp_context(amp):
-            logits = gpu(noisy.cuda())
-            actual_loss = F.cross_entropy(logits[:,::2].flatten(0,1).float(),targets[:,::2].flatten().cuda())
+            actual_loss = model_masked_loss(gpu,noisy.cuda(),targets.cuda(),mask.cuda())
         scaler.scale(actual_loss).backward(); scaler.unscale_(optimizer)
         relative = 0.05 if amp else 0.003
         gradients={}
@@ -177,7 +177,7 @@ def full_parity():
                         'masked_ce_cuda':float(actual_loss.detach()),'parameter_gradients':gradients})
         scaler.step(optimizer);scaler.update()
         print(json.dumps({'full_backward_passed':{'amp':amp}}),flush=True)
-    del cpu,gpu,optimizer,output,logits,expected,actual
+    del cpu,gpu,optimizer,output,expected,actual
     gc.collect();torch.cuda.empty_cache()
     return results
 
@@ -264,8 +264,9 @@ def probe(root, wall_cap=600.0, update_cap=24, forced_micro=None):
     for phase in ('parity','resume'):
         evidence=json.loads((root/f'{phase}.json').read_text())
         assert evidence['status']=='PASS' and evidence['gpu']=='Tesla T4',phase
-        actual=hashlib.sha256(Path(__file__).with_name('d1_model.py').read_bytes()).hexdigest()
-        assert evidence['source_sha256']['d1_model.py']==actual,'stale parity evidence'
+        for name in ('d1_model.py','train_diffusion.py','check_gdn_t4.py'):
+            actual=hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+            assert evidence['source_sha256'][name]==actual,f'stale {phase} evidence for {name}'
     started=time.monotonic()
     cfg=TrainConfig(bundle=str(root/'src'/'probe-bundle'),out=str(root/'probe-unused'),
                     profile='d1',mask_mode='blockwise',gdn_backend='chunk',device='cuda',amp=True,
@@ -297,7 +298,7 @@ def probe(root, wall_cap=600.0, update_cap=24, forced_micro=None):
         loss_sum=0.0
         for inputs,targets,mask,count in batches:
             with torch.autocast('cuda',dtype=torch.float16):
-                loss=masked_cross_entropy(model(inputs),targets,mask)
+                loss=model_masked_loss(model,inputs,targets,mask)
             assert bool(torch.isfinite(loss)),'nonfinite probe loss'
             scaler.scale(loss.float()*count/scored).backward()
             loss_sum+=float(loss.detach())*count

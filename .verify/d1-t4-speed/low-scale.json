@@ -1,0 +1,13 @@
+{
+  "status": "FAIL",
+  "purpose": "verify parity and process resume at the scale reached by production warmup",
+  "checks": {},
+  "source_sha256": {
+    "d1_model.py": "64bdfe8782b2eefe85ff7e8112ced95d0429503fdfcefcec0d6da582ab0593b4",
+    "train_diffusion.py": "9b9e560d2f3806794dcf3cdc00c2e657b263a922740824d2385dec3445f3248e",
+    "check_gdn_t4.py": "37c34d5b61dcf3470548e079695cc303eaa09b5dd2bc7981a56e81568abea03e",
+    "check_d1_p0.py": "45fe7e7dde05b29ec3ef66d4355ad040543a0a5c709441ca31bf6e14f89713f3"
+  },
+  "error": "P0/overhead failed",
+  "traceback": "Traceback (most recent call last):\n  File \"/content/d1-speed/src/low_scale_job.py\", line 13, in <module>\n    assert json.loads((root/'p0-done.json').read_text())['exit_code']==0,'P0/overhead failed'\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: P0/overhead failed\n"
+}

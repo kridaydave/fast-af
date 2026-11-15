@@ -1,4 +1,5 @@
 """CPU checks of probe evidence comparisons and real-byte subset construction."""
+import json
 import numpy as np
 import pytest
 import torch
@@ -84,3 +85,13 @@ def test_probe_comparison_enforces_error_budget():
 def test_probe_rejects_unbounded_or_invalid_settings(tmp_path, caps):
     with pytest.raises(ValueError):
         probe(tmp_path, **caps)
+
+
+@pytest.mark.skipif(torch.cuda.is_available(), reason='CPU failure-mode check')
+def test_p0_refuses_to_claim_gpu_validation_on_cpu(tmp_path, monkeypatch):
+    from scripts.check_d1_p0 import main
+
+    monkeypatch.setattr('sys.argv', ['check_d1_p0.py', '--phase', 'p0', '--root', str(tmp_path)])
+    assert main() == 1
+    report = json.loads((tmp_path / 'p0.json').read_text())
+    assert report['status'] == 'FAIL' and 'real T4' in report['error']

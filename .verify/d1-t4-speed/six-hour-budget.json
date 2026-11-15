@@ -1,0 +1,56 @@
+{
+  "ceiling_gpu_hours": 6,
+  "scope": "All three recorded Colab allocations, including prior backend investigation and current optimization/P0/validation; plus the following future P1 caps. P0 is already included in spent allocation, not counted twice.",
+  "allocations": {
+    "d1-t4-gdn-20261114": {
+      "cli_exit_code": 0,
+      "events": [
+        "[2026-11-14 16:18:19] EVENT: session_created",
+        "[2026-11-14 16:33:35] EVENT: session_terminated"
+      ],
+      "allocated_seconds": 916.0
+    },
+    "d1-t4-gdn-check": {
+      "cli_exit_code": 0,
+      "events": [
+        "[2026-11-14 16:36:17] EVENT: session_created",
+        "[2026-11-14 16:57:52] EVENT: session_terminated"
+      ],
+      "allocated_seconds": 1295.0
+    },
+    "d1-t4-speed": {
+      "cli_exit_code": 0,
+      "events": [
+        "[2026-11-15 05:29:10] EVENT: session_created",
+        "[2026-11-15 06:39:41] EVENT: session_terminated"
+      ],
+      "allocated_seconds": 4231.0
+    }
+  },
+  "allocated_gpu_hours_so_far": 1.7894444444444444,
+  "future_stage_cap_gpu_hours": {
+    "p1_training_including_restart_and_slowdown_margin": 2.5,
+    "optional_lr_screens": 0.25,
+    "three_full_validations": 0.4,
+    "external_gppl_mbpp_decode_checks": 0.75,
+    "checkpoint_transfer_setup": 0.25
+  },
+  "future_stage_caps_total": 4.15,
+  "total_with_all_future_caps": 5.939444444444445,
+  "remaining_under_six_after_future_caps": 0.06055555555555525,
+  "training_1525_attempt_projection_hours": [
+    1.8390702787102784,
+    1.8914215780912498,
+    1.8426463096940269
+  ],
+  "full_validation_measured_seconds": 353.0867707370003,
+  "full_validation_with_load_and_process_seconds": 365.42481498700045,
+  "three_validation_projection_hours": 0.3045206791558337,
+  "checkpoint_write_checksum_finalize_seconds": 14.611803443000099,
+  "unmeasured_costs": [
+    "D1 external generation/MBPP/decode evaluation",
+    "network checkpoint upload",
+    "future provider interruptions"
+  ],
+  "enforcement": "P1 remains blocked until an external controller enforces both stage caps and the global six-hour balance. Exhaustion means stop and report incomplete gates, not spend extra."
+}

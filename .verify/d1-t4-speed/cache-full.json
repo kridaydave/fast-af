@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "device": "cuda",
+  "source_sha256": {
+    "d1_model.py": "64bdfe8782b2eefe85ff7e8112ced95d0429503fdfcefcec0d6da582ab0593b4",
+    "train_diffusion.py": "9b9e560d2f3806794dcf3cdc00c2e657b263a922740824d2385dec3445f3248e",
+    "evaluate_d1_checkpoint.py": "5db0d592ff264f94d2abacb4bfef30302bf15ec47a1676155ff5925fa1f7cea2"
+  },
+  "torch": "2.14.1+cu130",
+  "cuda": "13.0",
+  "amp": true,
+  "corpus_fingerprint": "6f62a175ac05648cdef20684fba9038105a906333a0bcea57f81c3f48a172ab4",
+  "checkpoint": "/content/d1-speed/p0-run/checkpoint-000200.pt",
+  "gpu": "Tesla T4",
+  "capability": [
+    7,
+    5
+  ],
+  "evaluation": {
+    "contexts": 960,
+    "batches": 120,
+    "scored_tokens": 491072,
+    "processed_tokens": 1935360,
+    "score_passes": 3840,
+    "commit_passes": 3720,
+    "val_masked_ce": 7.509693330506543,
+    "seconds": 353.0867707370003,
+    "mode": "clean-prefix-cache",
+    "frontiers_per_context": 32
+  },
+  "peak_allocated_bytes": 926572544,
+  "peak_reserved_bytes": 991952896
+}

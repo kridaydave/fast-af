@@ -1,0 +1,13 @@
+import sys,subprocess,json,time
+from pathlib import Path
+root=Path('/content/d1-speed');phases=[]
+for phase,cap in [('p0',1850),('overhead',630)]:
+ start=time.monotonic();log=(root/f'{phase}.log').open('w')
+ try:
+  r=subprocess.run([sys.executable,'-u',str(root/'src/scripts/check_d1_p0.py'),'--phase',phase,'--root',str(root)],stdout=log,stderr=subprocess.STDOUT,timeout=cap)
+  code=r.returncode
+ except subprocess.TimeoutExpired:code=124
+ phases.append({'phase':phase,'exit_code':code,'wall_seconds':time.monotonic()-start})
+ (root/'p0-phases.json').write_text(json.dumps(phases,indent=2))
+ if code:break
+(root/'p0-done.json').write_text(json.dumps({'exit_code':code}))

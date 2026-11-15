@@ -327,6 +327,17 @@ def masked_cross_entropy(logits, targets, loss_mask, reduction='mean'):
     return F.cross_entropy(logits[loss_mask], targets[loss_mask], reduction=reduction)
 
 
+def model_masked_loss(model, inputs, targets, loss_mask):
+    """Keep prefix computation and gradients, omitting unscored D1 vocabulary rows."""
+    if inputs.shape != targets.shape or targets.shape != loss_mask.shape:
+        raise ValueError('shape mismatch')
+    if not loss_mask.any():
+        raise ValueError('empty loss mask')
+    if isinstance(model, D1LM):
+        return F.cross_entropy(model(inputs, logits_mask=loss_mask), targets[loss_mask])
+    return masked_cross_entropy(model(inputs), targets, loss_mask)
+
+
 class DiffusionBlock(nn.Module):
     def __init__(self, d_model, n_heads, mlp_ratio=4):
         super().__init__()
@@ -632,8 +643,15 @@ def evaluate(cfg, model, vocab, seq_len, batches=8, device='cpu'):
 
     The value is weighted by masked tokens, not batch means. With batches=None
     the loader is finite and the whole split is consumed exactly once. D1 full
-    validation visits every frontier per batch, with fixed corruption draws.
+    validation visits every frontier per batch with fixed corruption draws and
+    reuses immutable clean-prefix caches, without changing the scored tokens.
     """
+    if cfg.profile == 'd1' and batches is None and isinstance(model, D1LM):
+        if __package__:
+            from .evaluate_d1_checkpoint import evaluate_cached
+        else:
+            from evaluate_d1_checkpoint import evaluate_cached
+        return evaluate_cached(cfg, model, vocab)['val_masked_ce']
     loader = ShardLoader(cfg.bundle, 'validation', cfg.batch_size, cfg.seed + 1,
                          cfg.verify_hashes, vocab=vocab, finite=batches is None)
     generator = torch.Generator(device=device).manual_seed(cfg.seed + 1)
@@ -661,7 +679,7 @@ def evaluate(cfg, model, vocab, seq_len, batches=8, device='cpu'):
                         continue  # all-EOS validation block
                     with torch.autocast(device_type=torch.device(device).type,
                                         dtype=torch.float16, enabled=cfg.amp):
-                        loss = masked_cross_entropy(model(inputs), targets[:, :inputs.shape[1]], loss_mask)
+                        loss = model_masked_loss(model, inputs, targets[:, :inputs.shape[1]], loss_mask)
                     if not bool(torch.isfinite(loss)):
                         raise FloatingPointError('non-finite validation masked CE')
                     total += float(loss) * masked
@@ -756,9 +774,9 @@ def train(cfg, resume=None, log=print):
         for inputs, targets, loss_mask, masked in micro:
             if cfg.amp:
                 with torch.autocast(device_type=device.type, dtype=torch.float16):
-                    loss = masked_cross_entropy(model(inputs), targets, loss_mask)
+                    loss = model_masked_loss(model, inputs, targets, loss_mask)
             else:
-                loss = masked_cross_entropy(model(inputs), targets, loss_mask)
+                loss = model_masked_loss(model, inputs, targets, loss_mask)
             if not bool(torch.isfinite(loss)):
                 raise FloatingPointError(f'non-finite loss at step {step + 1}')
             weighted = loss.float() * (masked / masked_total)

@@ -98,12 +98,13 @@ def gated_delta_reference(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
 def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
                         decay: torch.Tensor, beta: torch.Tensor,
                         initial_state: torch.Tensor | None = None,
-                        chunk_size: int = 32) -> tuple[torch.Tensor, torch.Tensor]:
+                        chunk_size: int = 128) -> tuple[torch.Tensor, torch.Tensor]:
     """Parallelize each chunk with a unit-lower-triangular solve, using PyTorch.
 
     Same recurrence, normalized q/k and FP32 state as gated_delta_reference.
     The solve computes residual updates together; only chunk boundaries recur.
     Uses ordinary CUDA BLAS operations, not Triton/TF32 or custom CUDA code.
+    Short inputs use a smaller power-of-two chunk to avoid excess padding.
     """
     if type(chunk_size) is not int or chunk_size < 1:
         raise ValueError('chunk_size must be a positive integer')
@@ -114,6 +115,7 @@ def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         q, k, v, decay, beta = (x.transpose(1, 2).float() for x in (q, k, v, decay, beta))
         batch, heads, length, key_dim = q.shape
         value_dim = v.shape[-1]
+        chunk_size = min(chunk_size, 1 << (length - 1).bit_length())
         padding = (-length) % chunk_size
         q, k, v = (F.pad(x, (0, 0, 0, padding)) for x in (q, k, v))
         decay, beta = (F.pad(x, (0, padding)) for x in (decay, beta))
@@ -125,24 +127,30 @@ def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         # Mask before exp: upper-triangle differences can overflow for strong decay.
         differences = cumulative[..., :, None] - cumulative[..., None, :]
         relative_decay = differences.masked_fill(~lower, -torch.inf).exp()
+        absolute_decay = cumulative.exp()
         identity = torch.eye(chunk_size, device=q.device)
         system = identity + ((beta * k) @ k.transpose(-1, -2) * relative_decay).tril(-1)
-        rhs = torch.cat((beta * v, beta * cumulative.exp()[..., None] * k), dim=-1)
+        rhs = torch.cat((beta * v, beta * absolute_decay[..., None] * k), dim=-1)
         transformed = torch.linalg.solve_triangular(system, rhs, upper=False, unitriangular=True)
         base_values, state_weights = transformed.split((value_dim, key_dim), dim=-1)
         state = (v.new_zeros(batch, heads, key_dim, value_dim)
                  if initial_state is None else initial_state.float())
+        # Batch the state-independent work across every chunk before the scan.
+        queries = q / math.sqrt(key_dim)
+        attention = queries @ k.transpose(-1, -2) * relative_decay
+        projected_queries = queries * absolute_decay[..., None]
+        end_keys = (k * (cumulative[..., -1:] - cumulative).exp()[..., None]).transpose(-1, -2)
+        end_decay = absolute_decay[..., -1, None, None]
         outputs = []
-        for index in range(chunks):
-            queries, keys = q[:, :, index] / math.sqrt(key_dim), k[:, :, index]
-            log_decay = cumulative[:, :, index]
-            updates = base_values[:, :, index] - state_weights[:, :, index] @ state
-            attention = queries @ keys.transpose(-1, -2) * relative_decay[:, :, index]
-            output = (queries * log_decay.exp()[..., None]) @ state + attention @ updates
+        # Unbind once: indexing the full tensors inside the loop makes backward
+        # zero and accumulate full-sized slice gradients for every chunk.
+        pieces = zip(*(x.unbind(2) for x in
+                       (projected_queries, attention, end_keys, end_decay, base_values, state_weights)))
+        for queries, scores, keys, decay_factor, values, weights in pieces:
+            updates = values - weights @ state
+            output = queries @ state + scores @ updates
             outputs.append(output)
-            end_weights = (log_decay[..., -1:] - log_decay).exp()
-            state = (state * log_decay[..., -1, None, None].exp()
-                     + (keys * end_weights[..., None]).transpose(-1, -2) @ updates)
+            state = state * decay_factor + keys @ updates
         output = torch.cat(outputs, dim=2)[:, :, :length].transpose(1, 2).contiguous()
         return output, state
 
@@ -153,7 +161,8 @@ def backend_info(backend: str) -> dict[str, str]:
     if backend == 'torch':
         return {'name': 'torch-reference', 'torch': torch.__version__}
     if backend == 'chunk':
-        return {'name': 'torch-chunked', 'version': '1', 'chunk_size': '32', 'torch': torch.__version__}
+        return {'name': 'torch-chunked', 'version': '2', 'chunk_size': '128',
+                'short_chunk': 'power-of-two', 'torch': torch.__version__}
     try:
         distribution = importlib.metadata.distribution('flash-linear-attention')
         direct = json.loads(distribution.read_text('direct_url.json') or '{}')
@@ -331,24 +340,30 @@ class D1LM(nn.Module):
                 nn.init.normal_(output.weight, std=0.02 / math.sqrt(2 * self.cfg.n_layers))
 
     def _run(self, inputs: torch.Tensor, cache: D1Cache | None = None,
-             use_cache: bool = False) -> tuple[torch.Tensor, D1Cache | None]:
+             use_cache: bool = False, logits_mask: torch.Tensor | None = None) -> tuple[torch.Tensor, D1Cache | None]:
         offset = 0 if cache is None else cache.tokens
         if inputs.ndim != 2 or not inputs.shape[0] or not 0 < inputs.shape[1] <= self.seq_len - offset:
             raise ValueError('expected nonempty [batch, time] within configured context')
         if cache is not None:
             if offset % self.cfg.block_size or len(cache.layers) != len(self.blocks):
                 raise ValueError('cache must end at a block boundary with one state per layer')
+        if logits_mask is not None and (logits_mask.dtype != torch.bool or logits_mask.shape != inputs.shape):
+            raise ValueError('logits_mask must be boolean with the input shape')
         hidden = self.tokens(inputs)
         states: list[GDNState | AttentionState] = []
         for i, block in enumerate(self.blocks):
             hidden, state = block(hidden, None if cache is None else cache.layers[i], offset, use_cache)
             if state is not None:
                 states.append(state)
+        # Every token still participates in the hybrid. Project only requested
+        # loss positions to the vocabulary during training and validation.
+        if logits_mask is not None:
+            hidden = hidden[logits_mask]
         logits = F.linear(self.norm(hidden), self.tokens.weight)
         return logits, D1Cache(tuple(states), offset + inputs.shape[1]) if use_cache else None
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self._run(inputs)[0]
+    def forward(self, inputs: torch.Tensor, *, logits_mask: torch.Tensor | None = None) -> torch.Tensor:
+        return self._run(inputs, logits_mask=logits_mask)[0]
 
     def forward_block(self, inputs: torch.Tensor, cache: D1Cache | None = None) -> tuple[torch.Tensor, D1Cache]:
         """Return a candidate cache. The caller commits only clean final tokens."""

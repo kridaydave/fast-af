@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "measured_source_sha256": "45fe7e7dde05b29ec3ef66d4355ad040543a0a5c709441ca31bf6e14f89713f3",
+  "delivered_source_sha256": "910330a03f9abd4921c0c6d07424bf9c2905cbb173aa4e75a53284ce07651f96",
+  "unchanged_function_ast_sha256": {
+    "p0": "6a6ec3e9799e3b876ef80ad691ec9ded3de17b7bcb02b8c7e8255ff2c927fb6c",
+    "config": "e11f197fae728945ef496ef3e941b85215f05f66b5d90cd4e1422bc6f520d289",
+    "main": "4d563a2dbade8c2a46e243944042166a804dcbd2e33feefa97aef0b808dd90e8",
+    "source_hashes": "af41f18f3738fb4a27ba6dd6ce86f780897e2f77240239c41059930806b9c2b3"
+  },
+  "changed_function": "overhead",
+  "other_change": "remove unused evaluate import",
+  "scope": "Production P0 instrumentation and configuration are unchanged; overhead now reports cached-evaluator counts instead of a forward hook that misses forward_block calls."
+}
