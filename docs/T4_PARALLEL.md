@@ -6,9 +6,10 @@ from parameter count. The existing Python-heavy training-v1 bundle is an
 infrastructure fixture, not the agreed general-base data recipe.
 
 The new optional backend is `chunk-tc`, version 3. It uses FP16 operands for
-GDN matrix multiplies with FP32 GEMM outputs and first-order gradients. State,
+GDN matrix multiplies with FP32 GEMM outputs and first-order gradients. GDN recurrent state,
 triangular solves, decay, residual activations, normalization, master weights
-and optimizer state remain FP32. Its explicit autograd implementation is needed
+and optimizer state remain FP32. Attention KV and convolution histories follow
+the FP16 projection dtype under AMP. Its explicit autograd implementation is needed
 because `torch.bmm(out_dtype=torch.float32)` lacks native backward on the tested
 stacks. It does not provide higher-order differentiation. The existing `chunk`
 backend and CPU recurrence remain available.

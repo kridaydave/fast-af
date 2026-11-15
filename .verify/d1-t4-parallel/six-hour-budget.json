@@ -33,8 +33,13 @@
   "overhead_reserve_physical_gpu_hours": 0.15,
   "historical_future_reservation_gpu_hours_withdrawn": 4.15,
   "policy": "Charge both T4s for Kaggle runtime, including idle controls and CPU checks. Provider quota is a separate counter. The whole observed provider runtime counter is conservatively charged at two devices; this may overcount unrelated usage. Event durations are not a provider billing meter. Startup/teardown uncertainty is reserved separately.",
-  "final_job_status": "pending",
+  "final_job_status": "QUEUED",
   "p1_authorized": false,
   "conservative_debit_if_final_uses_full_cap_gpu_hours": 3.4771044444444446,
-  "remaining_if_full_cap_used_gpu_hours": 2.5228955555555554
+  "remaining_if_full_cap_used_gpu_hours": 2.5228955555555554,
+  "final_status_as_of_utc": "2026-11-15T16:40:00.248166+00:00",
+  "final_published_output_files": 0,
+  "past_accounted_gpu_hours": 2.660437777777778,
+  "pending_job_reservation_gpu_hours": 0.6666666666666666,
+  "remaining_planning_gpu_hours": 2.5228955555555554
 }

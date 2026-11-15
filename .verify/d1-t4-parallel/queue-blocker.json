@@ -1,0 +1,13 @@
+{
+  "observed_utc": "2026-11-15T16:40:00.248166+00:00",
+  "ref": "kridaydave/d1-two-t4-validated-20261115-1552",
+  "status": "QUEUED",
+  "failure_message": "",
+  "elapsed_since_submission_minutes": 46.088503599999996,
+  "published_output_files": 0,
+  "next_page": "",
+  "provider_gpu_quota_used_seconds": 189.288,
+  "provider_gpu_quota_reserved_seconds": 0.0,
+  "runtime_cap_seconds": 1200,
+  "device_count_requested": 2
+}

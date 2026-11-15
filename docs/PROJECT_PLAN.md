@@ -138,6 +138,14 @@ Both allocated devices count throughout that runtime, including CPU reference
 checks, one-rank controls, validation and checkpoint work. Six physical GPU-hours
 therefore permit three runtime hours with two T4s before subtracting prior work.
 A six-hour two-T4 runtime is twelve physical GPU-hours. No P1 run has been launched.
+The final v3 two-T4 qualification request is still queued, with no GPU
+reservation or published output after 46.1 minutes as of
+2026-11-15T16:40:00.248166+00:00. Its 20-minute runtime cap is reserved in the ledger;
+**2.52 physical GPU-hours** remain on that conservative planning basis.
+Do not claim measured two-T4 throughput or resume parity for v3 until its
+reports pass. Single-T4 output, gradient, full-context cache and resume checks
+have passed; earlier two-T4 gradient tests used a different candidate.
+
 
 The optional `chunk-tc` v3 backend, fused AdamW and single-node DDP preserve the
 109.1M-parameter model and context 1024. FP32 residuals/norms were retained after

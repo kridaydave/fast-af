@@ -16,7 +16,7 @@ This Python-heavy fixture is not the final general-base data recipe.
 ## Delivered precision and backend
 
 `chunk-tc` version **3** uses FP16 GEMM operands and FP32 GEMM outputs and
-first-order gradients. State, solve, residuals, normalization, decay, master
+first-order gradients. GDN recurrent state, solve, residuals, normalization, decay, master
 weights and optimizer state stay FP32. CUDA FP16 autocast and initial loss
 scale 8 were used. TF32 was disabled. No BF16, FLA/Triton, or unsupported SM80
 kernel was used on T4/SM75. The ordinary `chunk` backend remains selectable.
@@ -132,5 +132,34 @@ units. Six physical GPU-hours are three runtime hours with both T4s, before
 subtracting previous work. `--p1` remains blocked pending the budget controller,
 checkpoint retention/upload and frozen evaluation protocol.
 
-Two-T4 final results and the revised allocation ledger are added when that
-bounded notebook terminates; `final-status-history.jsonl` records its status.
+## Final two-T4 allocation blocker
+
+At 2026-11-15T16:40:00.248166+00:00, the final private notebook was still **QUEUED**,
+46.1 minutes after submission. Provider GPU
+reservation was zero and the output API published no files. This is recorded
+in `queue-blocker.json` and `final-status-history.jsonl`. The final v3 two-T4
+throughput, memory, gradient and process-resume qualification therefore remain
+**unmeasured**. Earlier v1 two-T4 gradient validation is not substituted for them.
+
+The bounded request remains queued with a **1200-second runtime cap**:
+[private Kaggle probe](https://www.kaggle.com/code/kridaydave/d1-two-t4-validated-20261115-1552).
+It runs parity before timing and cannot start a long pretraining job. No new
+Colab runtime is active. To finish qualification when Kaggle allocates hardware:
+
+```bash
+kaggle kernels status kridaydave/d1-two-t4-validated-20261115-1552
+kaggle kernels output kridaydave/d1-two-t4-validated-20261115-1552 -p /path/to/new-output
+```
+
+Inspect every phase exit code and output status before using a timing result.
+The alternative is to run the packaged script in an already allocated
+interactive two-T4 Kaggle notebook. Stop that interactive runtime afterward;
+script limits bound work, not the lifetime of a manually started notebook.
+
+The current ledger conservatively accounts 2.6604
+GPU-hours of prior work, reserves 0.6667
+for this queued job's full cap and 0.15 for unmetered startup/teardown uncertainty.
+That leaves **2.5229 physical GPU-hours** for future
+work within six. The old unspent 4.15-hour reservation is withdrawn. Event and
+provider-counter accounting are not a provider billing audit. No P1 run or
+multi-billion-token pretraining budget has been approved.
