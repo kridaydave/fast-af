@@ -2,6 +2,14 @@
 
 Updated 2026-11-15 with measured T4 infrastructure results; pilot authorization remains gated. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; the optimized T4 backend passes the 200-update P0 speed gate. The evaluation policy and production wall-time, checkpoint and upload controls still block P1. The P0/P1 budget ceiling is six GPU-hours. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
 
+The [project plan](PROJECT_PLAN.md) governs the general-purpose base, specialists
+and eventual roughly 2B-total-parameter MoE. **D1's 100M label refers to model
+parameters**; the instantiated model has 109,137,632. This document's separate
+approximately 100M-token pilot is an inherited infrastructure proposal using
+training-v1. It is not the user's model-size requirement or an approved data
+recipe/token budget for the new general base. The six-hour allocation below
+covers that conditional D1 smoke plan, not all specialist and MoE training.
+
 Labels follow repo practice. MEASURED means a repo run produced it. PAPER means a cited primary source. DERIVED means arithmetic from repo numbers. ESTIMATE means a guess that the probe must replace. UNCONFIRMED means not yet checked.
 
 ## 1. What this covers
@@ -354,7 +362,7 @@ Open decisions for Kriday:
 1. Corpus mix. Keep 50/35/15 as built, or shift toward 30-35% code, 45-50% web, 15-20% math, as `research/hillclimb-quality-ernie.md` recommends. Shifting means rebuilding and reauditing the corpus, and it invalidates the current hashes.
 2. Mask mode is now implemented as blockwise frontier masking for D1. A classical-mask comparison would be a separate, explicitly budgeted experiment.
 3. Peak learning rate. 1e-3 proposed, range 5e-4 to 2e-3. Three 50-step screens project to about 0.18 to 0.19 T4-hours before overhead and can reject unstable settings; they do not establish a convergence-optimal LR.
-4. Pilot size. 100M for P1, then matched P2 compute referenced to 500M arm-A tokens, subject to the probe. A 1B arm-A reference is a stretch.
+4. Training volume. The reference D1 smoke proposal consumes about 100M corpus tokens; this is independent of the roughly 100M-parameter model size. Freeze or revise it against the current project plan before launch. The historical P2 500M-token arm-A reference is outside the six-hour ceiling.
 5. Architecture and metric definitions are implemented and recorded in `D1_ARCHITECTURE.md`. The native T4 backend, parity, AMP resume and production P0 speed gate passed. The evaluation policy, total-time controller and operational readiness still block G3/P1.
 6. Micro-batch. Use 8 and accumulation 8 from production P0; a fallback needs its own probe.
 7. Number of seeds. Two is better. One is allowed with larger margins and a low-confidence label.

@@ -6,6 +6,11 @@ fast-af is a small, fast language model that runs on your own machine. It's earl
 
 This repo holds the model work and the benchmark harness. The harness measures tokens per second and HumanEval pass@1 on a free Colab T4, and it records the machine, the config, and the raw outputs so the numbers can be checked.
 
+The [project plan](docs/PROJECT_PLAN.md) starts with a general-purpose base, then
+adds specialists and explores a mixture of experts. D1 is a roughly 100M-parameter
+test model. The Python-heavy corpus and token-budget recipe are for testing the
+training pipeline.
+
 ## Run it
 
 ```bash
