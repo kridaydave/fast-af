@@ -287,7 +287,7 @@ def test_p1_refuses_without_prerequisites(tmp_path):
     base = dict(bundle=str(root), out=str(tmp_path / 'run'))
     with pytest.raises(ValueError, match='P1 requested without prerequisites'):
         train(TrainConfig(**base, p1=True), log=lambda *a: None)
-    with pytest.raises(ValueError, match='GPU cache/gradient/resume validation'):
+    with pytest.raises(ValueError, match='cumulative GPU budget, checkpoint retention/upload and frozen evaluation protocol'):
         train(TrainConfig(**base, p1=True, profile='d1', device='cpu'), log=lambda *a: None)
     with pytest.raises(ValueError, match='amp requires device=cuda'):
         train(TrainConfig(**base, amp=True), log=lambda *a: None)

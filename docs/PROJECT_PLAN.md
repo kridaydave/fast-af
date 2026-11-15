@@ -124,13 +124,40 @@ not demonstrate coherent conversation, tool use, branch qualification, useful
 MoE integration, inference speed, or completion of a general-base pretrain.
 The Python-heavy corpus remains a frozen infrastructure fixture.
 
-The [allocation ledger](../.verify/d1-t4-speed/six-hour-budget.json) records
-1.7894 GPU-hours already spent across three sessions. The previous D1 smoke-plan
-allowances reserve another 4.15 hours, totaling 5.9394 hours. That reservation is
-for one D1 smoke candidate and its checks. It does not cover three specialists,
-router training, upcycling, code RL, or a roughly 2B-parameter system. External
-quality-evaluation and upload costs are still unmeasured and must stop at their
-caps if exhausted. The T4 is stopped and no P1 run has been launched.
+Additional bounded optimization work is recorded in the
+[new T4 evidence](../.verify/d1-t4-parallel/README.md) and
+[current allocation ledger](../.verify/d1-t4-parallel/six-hour-budget.json).
+The historical ledger's 1.7894 GPU-hours is included there. Its unspent 4.15-hour
+reservation is withdrawn: subsequent R&D must also fit within the same six-hour
+ceiling. Use the new ledger's remaining balance rather than adding a new
+six-hour allowance. Provider billing and quota units are separate from physical
+GPU-hours; startup uncertainty is reserved explicitly.
+
+The available two-GPU arrangement is **one Kaggle runtime with two T4s**.
+Both allocated devices count throughout that runtime, including CPU reference
+checks, one-rank controls, validation and checkpoint work. Six physical GPU-hours
+therefore permit three runtime hours with two T4s before subtracting prior work.
+A six-hour two-T4 runtime is twelve physical GPU-hours. No P1 run has been launched.
+
+The optional `chunk-tc` v3 backend, fused AdamW and single-node DDP preserve the
+109.1M-parameter model and context 1024. FP32 residuals/norms were retained after
+an FP16 candidate failed cached/full parity on Kaggle; the tolerance was not
+loosened. The final single-T4 bounded probe measured 8,436 processed input tokens/s
+and 15,308 consumed corpus tokens/s. Those are different from its approximately
+241 scored tokens/s. See [execution details](T4_PARALLEL.md) and the evidence for
+paired two-T4 results, memory, resume checks and conservative budget arithmetic.
+
+At the measured single-T4 rate, consuming one billion corpus tokens projects to
+about 18.1 runtime hours before evaluation/checkpoint overhead. This is a
+projection of this frontier objective, not a sufficient pretraining budget or
+autoregressive loss-token equivalent. A model's parameter count alone cannot
+establish a six-hour complete pretrain. Do not reduce model size or silently
+substitute a 100M-token target to make the budget appear to fit.
+
+These allocations do not cover three specialists, router training, upcycling,
+code RL, or a roughly 2B-parameter system. External quality-evaluation and upload
+costs remain unmeasured and must stop at their caps if exhausted. New backend,
+batch and world-size configurations require P0 and quality requalification.
 
 The [T4 pilot recipe](TRAINING_RECIPE_T4_PILOT.md) remains a conditional
 infrastructure recipe. Its token-volume assumptions and allocations must be
@@ -150,7 +177,10 @@ current six-hour plan.
 3. Freeze model size/architecture and a **separate token or attempt budget** from
    measured compute. The current D1 timing is a reference; changed data, context,
    architecture, batch or objective may require a new bounded probe.
-4. Implement cumulative GPU-time accounting and checkpoint retention/upload.
+4. Select the measured T4 configuration and freeze its micro-batch/frontier
+   grouping. A global micro-batch of 8 on two GPUs preserves the single-GPU
+   grouping; 16 changes the number of frontier draws per update and needs
+   requalification. Implement cumulative GPU-time accounting and checkpoint retention/upload.
    Persist spent time across restarts; include validation, transfers and failed
    work. Refuse another stage if the remaining balance cannot cover it.
    `--p1` remains blocked until these controls and the evaluation protocol are

@@ -1,0 +1,246 @@
+{
+  "status": "PASS",
+  "gpu": "Tesla T4",
+  "devices": 1,
+  "torch": "2.14.1+cu130",
+  "cuda": "13.0",
+  "params": 109137632,
+  "context": 1024,
+  "global_batch": 64,
+  "global_micro": 8,
+  "per_gpu_micro": 8,
+  "backend": "chunk-tc",
+  "fused_optimizer": true,
+  "mode": "uniform",
+  "precision": "fp16 autocast; fp32 state/solve/optimizer",
+  "validation_included": false,
+  "checkpoint_included": false,
+  "provenance": {
+    "manifest_sha256": "85c0cbcfd4e161742439c11b803a0054bbde91528a09bb1582ac64e90dd51dd6",
+    "fingerprint": "ec6f6545c91ae536ed75e631f5d53f699703279477f913a753c53df51a1d8508",
+    "tokenizer_manifest_sha256": "5686f355f4332a73a8caa67910d4c52d798a7f361df1f35450ea0f4ed3b241b0",
+    "tokenizer_sha256": "5bb6b95687e59ae2c8a52c7ec8e664574aaffae8875f567a7335d9d666e3de0b",
+    "seq_len": 1024,
+    "shards": [
+      {
+        "split": "train",
+        "path": "train.bin",
+        "sha256": "3e2b6e538ff0ea10c3d309bd9bd89885237198708f9ab49abd4f838d6aa4ce84",
+        "tokens": 131072
+      },
+      {
+        "split": "validation",
+        "path": "validation.bin",
+        "sha256": "98731bb009f6433bc2bab4555b96cd57493ca10e35e5f5ca196c0ec7e48c7b66",
+        "tokens": 32768
+      }
+    ]
+  },
+  "source_sha256": {
+    "fetch_training_sources.py": "c67a02ee206a3ce45baeacb96f0338c2f0b1f18e921a675cf36b98eab46a7c5a",
+    "audit_training_data.py": "df5020b5cb3083d4a1cb655a4723afeefa61017b07f9d4c92a08f66677f813fa",
+    "check_d1_cache_long.py": "3cee313824468010e38d127d2e1e7d69f83c91b5e8f43a06ff6772447933f416",
+    "check_gdn_t4.py": "a0c40d416eae7dd48ab6e247548b7b22d1ed6ef232d64e3a8298826b3e68d3e7",
+    "evaluate_d1_checkpoint.py": "5db0d592ff264f94d2abacb4bfef30302bf15ec47a1676155ff5925fa1f7cea2",
+    "train_diffusion.py": "752de83614a7dccd56a004053f74b4ecda0208f25b6bba9808bb8657727a80a2",
+    "check_d1_parallel.py": "7ea16802ab796a6541dbe000cdb58d05d3ab3ebcf431953dcad562471e6433ff",
+    "package_kaggle_probe.py": "9e77d1da48bf94c1e28824af1d448d0e74dae6317d2aa8040756f75751f3d69c",
+    "data_prep_yours.py": "43f9afc99516a955581b72731da7e62d030a2ecfbed92249c875e7039871e896",
+    "build_training_mix.py": "c199dd08b3d6a43c8a0bdbd3ddd1ace8774bb48fcc9489c8db7ecfd92fe48130",
+    "build_probe_bundle.py": "6fa740469202249107f639fcc84338ccd6e7d294d543ba19aa4400af85ce7076",
+    "kaggle_t4_probe.py": "30d31cd4bcaae81b20438acb6910507496ba875e115e4288f93c29fa1e22052b",
+    "train_tokenizer.py": "3db40c6d793129f0987eb78f0d7f521b991a74e6b545502571dda3d8192f0b19",
+    "validate_d1.py": "4b14f94f37738f02b8fdd2b7fe368a1d7527c2cbe605bacc723a2667a0f03540",
+    "export_benchmarks.py": "79619bc112d61a47ed7ef6ff6abddf9ce544db84845c81ba3506ecd64897b0b9",
+    "data_prep.py": "57d35b3b2b970bcfe5b297b43a1427b09f7b899c80bdb9b27d43965f66c42f4c",
+    "distributed_training.py": "1e41c0a6da94d3c1d978cd1430a67806b9e16bb32b646695f797b12766ddb3bc",
+    "d1_model.py": "6b9456218ece8d0f3329e23bd386fc30729630354e9a325c9be58dacd05e7ecb",
+    "benchmark_d1_parallel.py": "20072e72624dba8a3f62b4d94ed5bda17566ce52d25f1bfd1e2ba9ff556f8c3f",
+    "profile_smoldlm_cache.py": "5ee916fbd4b38b27a278c16521543754102b83c0c107b8ddc20dc4163ead7c53",
+    "check_d1_p0.py": "910330a03f9abd4921c0c6d07424bf9c2905cbb173aa4e75a53284ce07651f96",
+    "near_dedup.py": "4d07fe7d99cd2797df12ecab585c25adc970ec45f19ebbe10b7326f035973111",
+    "prepare_corpus.py": "e064595d0c47ebef450b45d22ab2f653f9b347d2d77965f757b605f5bbe6226b"
+  },
+  "windows": [
+    {
+      "window": 0,
+      "seconds": 16.109399858000074,
+      "gpu_seconds": 16.109399858000074,
+      "consumed": 262144,
+      "processed": 137472,
+      "scored": 4161,
+      "skipped": 0,
+      "updates": [
+        {
+          "consumed": 65536,
+          "processed": 36096,
+          "scored": 1077,
+          "skipped": 0,
+          "masked_ce": 9.426843953110492,
+          "grad_norm": 1.9302852153778076
+        },
+        {
+          "consumed": 65536,
+          "processed": 34560,
+          "scored": 977,
+          "skipped": 0,
+          "masked_ce": 9.162427232599795,
+          "grad_norm": 2.0580790042877197
+        },
+        {
+          "consumed": 65536,
+          "processed": 37888,
+          "scored": 1043,
+          "skipped": 0,
+          "masked_ce": 9.119479566155322,
+          "grad_norm": 1.7273564338684082
+        },
+        {
+          "consumed": 65536,
+          "processed": 28928,
+          "scored": 1064,
+          "skipped": 0,
+          "masked_ce": 8.840504581766917,
+          "grad_norm": 1.968042254447937
+        }
+      ],
+      "peak_allocated_per_rank": 12671136256,
+      "peak_reserved_per_rank": 14097055744,
+      "consumed_tokens_per_second": 16272.735316692564,
+      "processed_tokens_per_second": 8533.651235413972,
+      "scored_tokens_per_second": 258.29640065291505
+    },
+    {
+      "window": 1,
+      "seconds": 16.50411614799998,
+      "gpu_seconds": 16.50411614799998,
+      "consumed": 262144,
+      "processed": 136960,
+      "scored": 4107,
+      "skipped": 0,
+      "updates": [
+        {
+          "consumed": 65536,
+          "processed": 33024,
+          "scored": 1069,
+          "skipped": 0,
+          "masked_ce": 8.817210155519177,
+          "grad_norm": 1.6506457328796387
+        },
+        {
+          "consumed": 65536,
+          "processed": 27392,
+          "scored": 1012,
+          "skipped": 0,
+          "masked_ce": 8.531601253705533,
+          "grad_norm": 1.8282517194747925
+        },
+        {
+          "consumed": 65536,
+          "processed": 28416,
+          "scored": 969,
+          "skipped": 0,
+          "masked_ce": 8.483961800180598,
+          "grad_norm": 1.5355451107025146
+        },
+        {
+          "consumed": 65536,
+          "processed": 48128,
+          "scored": 1057,
+          "skipped": 0,
+          "masked_ce": 8.165546283703879,
+          "grad_norm": 1.7603696584701538
+        }
+      ],
+      "peak_allocated_per_rank": 12507699712,
+      "peak_reserved_per_rank": 14097055744,
+      "consumed_tokens_per_second": 15883.552784604428,
+      "processed_tokens_per_second": 8298.535878675166,
+      "scored_tokens_per_second": 248.84701265857845
+    },
+    {
+      "window": 2,
+      "seconds": 18.761660190000043,
+      "gpu_seconds": 18.761660190000043,
+      "consumed": 262144,
+      "processed": 158976,
+      "scored": 4114,
+      "skipped": 0,
+      "updates": [
+        {
+          "consumed": 65536,
+          "processed": 36608,
+          "scored": 972,
+          "skipped": 0,
+          "masked_ce": 8.18677662037037,
+          "grad_norm": 1.4453856945037842
+        },
+        {
+          "consumed": 65536,
+          "processed": 39424,
+          "scored": 995,
+          "skipped": 0,
+          "masked_ce": 8.090874293341708,
+          "grad_norm": 1.3258745670318604
+        },
+        {
+          "consumed": 65536,
+          "processed": 43008,
+          "scored": 1101,
+          "skipped": 0,
+          "masked_ce": 8.035727463669392,
+          "grad_norm": 1.1993411779403687
+        },
+        {
+          "consumed": 65536,
+          "processed": 39936,
+          "scored": 1046,
+          "skipped": 0,
+          "masked_ce": 7.786692982194072,
+          "grad_norm": 1.3479108810424805
+        }
+      ],
+      "peak_allocated_per_rank": 12842742272,
+      "peak_reserved_per_rank": 14180941824,
+      "consumed_tokens_per_second": 13972.324269028315,
+      "processed_tokens_per_second": 8473.45055768221,
+      "scored_tokens_per_second": 219.27697007287023
+    }
+  ],
+  "warmup": [
+    {
+      "consumed": 65536,
+      "processed": 28928,
+      "scored": 976,
+      "skipped": 0,
+      "masked_ce": 10.49034643954918,
+      "grad_norm": 26.10264015197754
+    },
+    {
+      "consumed": 65536,
+      "processed": 38144,
+      "scored": 1048,
+      "skipped": 0,
+      "masked_ce": 10.194328482824428,
+      "grad_norm": 14.800555229187012
+    },
+    {
+      "consumed": 65536,
+      "processed": 32768,
+      "scored": 1119,
+      "skipped": 0,
+      "masked_ce": 9.716006199731904,
+      "grad_norm": 2.721691846847534
+    },
+    {
+      "consumed": 65536,
+      "processed": 34816,
+      "scored": 1005,
+      "skipped": 0,
+      "masked_ce": 9.415609452736318,
+      "grad_norm": 2.616788625717163
+    }
+  ],
+  "wall_seconds": 69.15149395000003,
+  "final_scale": 8.0
+}

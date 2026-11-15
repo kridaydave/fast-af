@@ -95,10 +95,42 @@ def gated_delta_reference(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         return torch.stack(outputs, dim=1), state
 
 
+class _TensorCoreMM(torch.autograd.Function):
+    """FP16 operands with FP32 GEMM output and FP32 first-order gradients.
+
+    torch.bmm(out_dtype=float32) has no native autograd on the measured stack.
+    Keep this explicit rather than silently rounding state/results to FP16.
+    """
+    @staticmethod
+    def forward(ctx, a, b):
+        a, b = a.half(), b.half()
+        ctx.save_for_backward(a, b)
+        return torch.bmm(a, b, out_dtype=torch.float32)
+
+    @staticmethod
+    @torch.autograd.function.once_differentiable
+    def backward(ctx, gradient):
+        a, b = ctx.saved_tensors
+        gradient = gradient.half()
+        return (torch.bmm(gradient, b.transpose(-1, -2), out_dtype=torch.float32),
+                torch.bmm(a.transpose(-1, -2), gradient, out_dtype=torch.float32))
+
+
+def tensorcore_mm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """Equal batch dimensions only; callers keep state/solve/decay in FP32."""
+    if a.device.type != 'cuda' or b.device != a.device:
+        raise ValueError('Tensor Core GDN requires CUDA operands on the same device')
+    if a.shape[:-2] != b.shape[:-2] or a.shape[-1] != b.shape[-2]:
+        raise ValueError('Tensor Core GDN matmul does not broadcast')
+    shape = (*a.shape[:-1], b.shape[-1])
+    return _TensorCoreMM.apply(a.reshape(-1, *a.shape[-2:]),
+                               b.reshape(-1, *b.shape[-2:])).reshape(shape)
+
+
 def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
                         decay: torch.Tensor, beta: torch.Tensor,
                         initial_state: torch.Tensor | None = None,
-                        chunk_size: int = 128) -> tuple[torch.Tensor, torch.Tensor]:
+                        chunk_size: int = 128, *, tensor_cores: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
     """Parallelize each chunk with a unit-lower-triangular solve, using PyTorch.
 
     Same recurrence, normalized q/k and FP32 state as gated_delta_reference.
@@ -111,6 +143,7 @@ def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
     if (q.ndim != 4 or q.shape != k.shape or v.shape[:3] != q.shape[:3]
             or decay.shape != q.shape[:3] or beta.shape != decay.shape or not q.shape[1]):
         raise ValueError('incompatible gated delta tensor shapes')
+    mm = tensorcore_mm if tensor_cores else torch.matmul
     with torch.autocast(device_type=q.device.type, enabled=False):
         q, k, v, decay, beta = (x.transpose(1, 2).float() for x in (q, k, v, decay, beta))
         batch, heads, length, key_dim = q.shape
@@ -129,7 +162,7 @@ def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         relative_decay = differences.masked_fill(~lower, -torch.inf).exp()
         absolute_decay = cumulative.exp()
         identity = torch.eye(chunk_size, device=q.device)
-        system = identity + ((beta * k) @ k.transpose(-1, -2) * relative_decay).tril(-1)
+        system = identity + (mm(beta * k, k.transpose(-1, -2)) * relative_decay).tril(-1)
         rhs = torch.cat((beta * v, beta * absolute_decay[..., None] * k), dim=-1)
         transformed = torch.linalg.solve_triangular(system, rhs, upper=False, unitriangular=True)
         base_values, state_weights = transformed.split((value_dim, key_dim), dim=-1)
@@ -137,7 +170,7 @@ def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
                  if initial_state is None else initial_state.float())
         # Batch the state-independent work across every chunk before the scan.
         queries = q / math.sqrt(key_dim)
-        attention = queries @ k.transpose(-1, -2) * relative_decay
+        attention = mm(queries, k.transpose(-1, -2)) * relative_decay
         projected_queries = queries * absolute_decay[..., None]
         end_keys = (k * (cumulative[..., -1:] - cumulative).exp()[..., None]).transpose(-1, -2)
         end_decay = absolute_decay[..., -1, None, None]
@@ -147,22 +180,27 @@ def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         pieces = zip(*(x.unbind(2) for x in
                        (projected_queries, attention, end_keys, end_decay, base_values, state_weights)))
         for queries, scores, keys, decay_factor, values, weights in pieces:
-            updates = values - weights @ state
-            output = queries @ state + scores @ updates
+            updates = values - mm(weights, state)
+            output = mm(queries, state) + mm(scores, updates)
             outputs.append(output)
-            state = state * decay_factor + keys @ updates
+            state = state * decay_factor + mm(keys, updates)
         output = torch.cat(outputs, dim=2)[:, :, :length].transpose(1, 2).contiguous()
         return output, state
 
 
 def backend_info(backend: str) -> dict[str, str]:
-    if backend not in ('torch', 'chunk', 'fla'):
-        raise ValueError('GDN backend must be torch, chunk or fla')
+    if backend not in ('torch', 'chunk', 'chunk-tc', 'fla'):
+        raise ValueError('GDN backend must be torch, chunk, chunk-tc or fla')
     if backend == 'torch':
         return {'name': 'torch-reference', 'torch': torch.__version__}
     if backend == 'chunk':
         return {'name': 'torch-chunked', 'version': '2', 'chunk_size': '128',
                 'short_chunk': 'power-of-two', 'torch': torch.__version__}
+    if backend == 'chunk-tc':
+        return {'name': 'torch-chunked-tensorcore', 'version': '3', 'chunk_size': '128',
+                'short_chunk': 'power-of-two', 'matmul': 'fp16-input-fp32-output-and-gradient',
+                'state_solve': 'fp32', 'residual': 'fp32',
+                'norm': 'fp32-input-and-weight', 'torch': torch.__version__}
     try:
         distribution = importlib.metadata.distribution('flash-linear-attention')
         direct = json.loads(distribution.read_text('direct_url.json') or '{}')
@@ -213,8 +251,8 @@ class CausalConv(nn.Module):
 class GatedDeltaNet(nn.Module):
     def __init__(self, cfg: D1Config, backend: str):
         super().__init__()
-        if backend not in ('torch', 'chunk', 'fla'):
-            raise ValueError('GDN backend must be torch, chunk or fla')
+        if backend not in ('torch', 'chunk', 'chunk-tc', 'fla'):
+            raise ValueError('GDN backend must be torch, chunk, chunk-tc or fla')
         self.cfg, self.backend = cfg, backend
         key, value = cfg.gdn_heads * cfg.gdn_key_dim, cfg.gdn_heads * cfg.gdn_value_dim
         self.q_proj = nn.Linear(cfg.d_model, key, bias=False)
@@ -253,12 +291,18 @@ class GatedDeltaNet(nn.Module):
             output, final = fla_operator()(
                 q=q.to(v.dtype), k=k.to(v.dtype), v=v, g=decay, beta=beta,
                 initial_state=initial, output_final_state=use_cache)
-        elif self.backend == 'chunk':
-            output, final = gated_delta_chunked(q, k, v, decay, beta, initial)
+        elif self.backend in ('chunk', 'chunk-tc'):
+            if self.backend == 'chunk-tc' and (x.device.type != 'cuda' or v.dtype != torch.float16):
+                raise ValueError('chunk-tc requires CUDA fp16 autocast')
+            output, final = gated_delta_chunked(q, k, v, decay, beta, initial,
+                                                tensor_cores=self.backend == 'chunk-tc')
         else:
             output, final = gated_delta_reference(q, k, v, decay, beta, initial)
         gate = self.g_proj(x).reshape(*x.shape[:2], c.gdn_heads, c.gdn_value_dim)
-        output = self.output_norm(output.to(gate.dtype)) * F.silu(gate)
+        # Same-dtype FP32 norm avoids Torch 2.11's expensive mixed-dtype fallback.
+        # Keep FP32 residuals/norms: FP16 residuals failed cached/full parity on T4.
+        norm_input = output if self.backend == 'chunk-tc' else output.to(gate.dtype)
+        output = self.output_norm(norm_input) * F.silu(gate)
         result = self.o_proj(output.flatten(-2))
         cache = GDNState(final, tuple(conv_states)) if use_cache else None
         return result, cache
@@ -319,8 +363,8 @@ class D1LM(nn.Module):
     def __init__(self, vocab_size: int, seq_len: int, cfg: D1Config | None = None, backend: str = 'torch'):
         super().__init__()
         self.cfg = D1Config() if cfg is None else cfg
-        if backend not in ('torch', 'chunk', 'fla'):
-            raise ValueError('GDN backend must be torch, chunk or fla')
+        if backend not in ('torch', 'chunk', 'chunk-tc', 'fla'):
+            raise ValueError('GDN backend must be torch, chunk, chunk-tc or fla')
         if type(vocab_size) is not int or vocab_size < 6:
             raise ValueError('D1 vocab_size must be an integer of at least 6')
         if type(seq_len) is not int or seq_len < self.cfg.block_size or seq_len % self.cfg.block_size:
@@ -340,7 +384,8 @@ class D1LM(nn.Module):
                 nn.init.normal_(output.weight, std=0.02 / math.sqrt(2 * self.cfg.n_layers))
 
     def _run(self, inputs: torch.Tensor, cache: D1Cache | None = None,
-             use_cache: bool = False, logits_mask: torch.Tensor | None = None) -> tuple[torch.Tensor, D1Cache | None]:
+             use_cache: bool = False, logits_mask: torch.Tensor | None = None,
+             logits_last: int | None = None) -> tuple[torch.Tensor, D1Cache | None]:
         offset = 0 if cache is None else cache.tokens
         if inputs.ndim != 2 or not inputs.shape[0] or not 0 < inputs.shape[1] <= self.seq_len - offset:
             raise ValueError('expected nonempty [batch, time] within configured context')
@@ -349,6 +394,9 @@ class D1LM(nn.Module):
                 raise ValueError('cache must end at a block boundary with one state per layer')
         if logits_mask is not None and (logits_mask.dtype != torch.bool or logits_mask.shape != inputs.shape):
             raise ValueError('logits_mask must be boolean with the input shape')
+        if logits_last is not None and (type(logits_last) is not int or not 0 < logits_last <= inputs.shape[1]
+                                        or logits_mask is not None):
+            raise ValueError('logits_last must select a nonempty suffix, without logits_mask')
         hidden = self.tokens(inputs)
         states: list[GDNState | AttentionState] = []
         for i, block in enumerate(self.blocks):
@@ -359,11 +407,14 @@ class D1LM(nn.Module):
         # loss positions to the vocabulary during training and validation.
         if logits_mask is not None:
             hidden = hidden[logits_mask]
+        elif logits_last is not None:
+            hidden = hidden[:, -logits_last:]
         logits = F.linear(self.norm(hidden), self.tokens.weight)
         return logits, D1Cache(tuple(states), offset + inputs.shape[1]) if use_cache else None
 
-    def forward(self, inputs: torch.Tensor, *, logits_mask: torch.Tensor | None = None) -> torch.Tensor:
-        return self._run(inputs, logits_mask=logits_mask)[0]
+    def forward(self, inputs: torch.Tensor, *, logits_mask: torch.Tensor | None = None,
+                logits_last: int | None = None) -> torch.Tensor:
+        return self._run(inputs, logits_mask=logits_mask, logits_last=logits_last)[0]
 
     def forward_block(self, inputs: torch.Tensor, cache: D1Cache | None = None) -> tuple[torch.Tensor, D1Cache]:
         """Return a candidate cache. The caller commits only clean final tokens."""

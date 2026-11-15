@@ -23,9 +23,10 @@ from scripts.d1_model import (D1Config, D1LM, GatedDeltaNet, GDNState, gated_del
 from scripts.train_diffusion import (TrainConfig, ShardLoader, block_diffusion_mask,
     build_optimizer, load_checkpoint, model_masked_loss, optimizer_step)
 
-# The saved T4 layer diagnostic overflows at scale 8192, including the input
-# gradient. Scale 256 passed parity and six applied checkpoint/resume updates.
-AMP_INIT_SCALE = 256.0
+# The 200-attempt T4 P0 calibrated to scale 8. Fresh parity/resume passed at 8.
+AMP_INIT_SCALE = 8.0
+BACKEND = 'chunk'
+FUSED_OPTIMIZER = False
 # Steps the resume check runs, so it can require a real update on every one.
 RESUME_STEPS = 6
 
@@ -62,14 +63,14 @@ def core_parity():
             gpu = [t.detach().cuda().requires_grad_() for t in cpu]
             expected, es = gated_delta_reference(*cpu)
             with amp_context(amp):
-                actual, state = gated_delta_chunked(gpu[0], gpu[1], gpu[2], gpu[3], gpu[4], gpu[5])
+                actual, state = gated_delta_chunked(gpu[0], gpu[1], gpu[2], gpu[3], gpu[4], gpu[5], tensor_cores=BACKEND == 'chunk-tc')
             probes = torch.randn_like(expected), torch.randn_like(es)
             cg = torch.autograd.grad((expected * probes[0]).sum() + (es * probes[1]).sum(), cpu)
             gg = torch.autograd.grad((actual * probes[0].cuda()).sum() + (state * probes[1].cuda()).sum(), gpu)
             result = {'length': length, 'mode': 'amp-fp16-v' if amp else 'fp32',
-                      'output': comparison(expected, actual, 5e-4, 2e-5, 'core output'),
-                      'state': comparison(es, state, 5e-4, 2e-5, 'core state'),
-                      'gradients': {name: comparison(a, b, 3e-3 if amp else 8e-4, 3e-5, name)
+                      'output': comparison(expected, actual, 2e-3 if BACKEND == 'chunk-tc' else 5e-4, 2e-5, 'core output'),
+                      'state': comparison(es, state, 2e-3 if BACKEND == 'chunk-tc' else 5e-4, 2e-5, 'core state'),
+                      'gradients': {name: comparison(a, b, 3e-3 if amp or BACKEND == 'chunk-tc' else 8e-4, 3e-5, name)
                                     for name, a, b in zip(('q','k','v','decay','beta','initial_state'), cg, gg)}}
             results.append(result)
             print(json.dumps({'core_case_passed': {'length': length, 'amp': amp}}), flush=True)
@@ -78,14 +79,14 @@ def core_parity():
 
 def layer_parity():
     results = []
-    for amp in (False, True):
+    for amp in ((True,) if BACKEND == 'chunk-tc' else (False, True)):
         torch.manual_seed(19)
         cfg = D1Config()
         cpu = GatedDeltaNet(cfg, 'torch')
         for module in cpu.modules():
             if isinstance(module, torch.nn.Linear): torch.nn.init.normal_(module.weight, std=0.02)
         torch.nn.init.normal_(cpu.o_proj.weight, std=0.02 / math.sqrt(32))
-        gpu = GatedDeltaNet(cfg, 'chunk').cuda()
+        gpu = GatedDeltaNet(cfg, BACKEND).cuda()
         gpu.load_state_dict(cpu.state_dict())
         prefix = torch.randn(1, 32, 640)
         with torch.no_grad():
@@ -130,12 +131,12 @@ def layer_parity():
 def full_parity():
     torch.manual_seed(23)
     cpu = D1LM(32000, 1024).eval()
-    gpu = D1LM(32000, 1024, backend='chunk').cuda().eval()
+    gpu = D1LM(32000, 1024, backend=BACKEND).cuda().eval()
     gpu.load_state_dict(cpu.state_dict())
     tokens = torch.randint(5,32000,(1,96))
     with torch.no_grad(): expected = cpu(tokens)
     results = []
-    for amp in (False, True):
+    for amp in ((True,) if BACKEND == 'chunk-tc' else (False, True)):
         with torch.no_grad(), amp_context(amp):
             actual = gpu(tokens.cuda())
             entry = gpu.prefill(tokens[:, :32].cuda())
@@ -160,7 +161,7 @@ def full_parity():
     output = cpu(noisy)
     loss = F.cross_entropy(output[:,::2].flatten(0,1), targets[:,::2].flatten())
     loss.backward()
-    for amp in (False,True):
+    for amp in ((True,) if BACKEND == 'chunk-tc' else (False, True)):
         gpu.train(); gpu.zero_grad(set_to_none=True)
         optimizer = torch.optim.SGD(gpu.parameters(),lr=0)
         scaler = torch.amp.GradScaler('cuda',enabled=amp,init_scale=AMP_INIT_SCALE)
@@ -186,10 +187,12 @@ def resume_check(root):
     source=Path(__file__).resolve().parent
     bundle=root/'src'/'probe-bundle'
     base=[sys.executable,'-u',str(source/'train_diffusion.py'),'--bundle',str(bundle),
-          '--profile','d1','--gdn-backend','chunk','--device','cuda','--amp',
+          '--profile','d1','--gdn-backend',BACKEND,'--device','cuda','--amp',
           '--amp-init-scale',str(AMP_INIT_SCALE),
           '--steps',str(RESUME_STEPS),'--warmup','1','--batch-size','1','--grad-accum','1',
           '--checkpoint-every','3','--eval-every','3','--eval-batches','1','--verify-hashes']
+    if FUSED_OPTIMIZER:
+        base += ['--fused-optimizer']
     def run(name,extra=()):
         result=subprocess.run(base+['--out',str(root/name)]+list(extra),capture_output=True,text=True,timeout=300)
         (root/f'{name}.log').write_text(result.stdout+result.stderr)
@@ -263,21 +266,22 @@ def probe(root, wall_cap=600.0, update_cap=24, forced_micro=None):
         raise ValueError('micro-batch must be one of 1, 2, 4, 8')
     for phase in ('parity','resume'):
         evidence=json.loads((root/f'{phase}.json').read_text())
+        assert evidence.get('backend') == BACKEND, f'stale {phase} backend'
         assert evidence['status']=='PASS' and evidence['gpu']=='Tesla T4',phase
         for name in ('d1_model.py','train_diffusion.py','check_gdn_t4.py'):
             actual=hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
             assert evidence['source_sha256'][name]==actual,f'stale {phase} evidence for {name}'
     started=time.monotonic()
     cfg=TrainConfig(bundle=str(root/'src'/'probe-bundle'),out=str(root/'probe-unused'),
-                    profile='d1',mask_mode='blockwise',gdn_backend='chunk',device='cuda',amp=True,
+                    profile='d1',mask_mode='blockwise',gdn_backend=BACKEND,fused_optimizer=FUSED_OPTIMIZER,device='cuda',amp=True,
                     batch_size=1,grad_accum=64,steps=100,warmup=2,lr=1e-3,eval_every=0)
     torch.manual_seed(73);torch.cuda.manual_seed_all(73)
-    model=D1LM(32000,1024,backend='chunk').cuda().train()
+    model=D1LM(32000,1024,backend=BACKEND).cuda().train()
     optimizer=build_optimizer(model,cfg)
     scheduler=torch.optim.lr_scheduler.LambdaLR(optimizer,lambda step:1.0)
     scaler=torch.amp.GradScaler('cuda',init_scale=AMP_INIT_SCALE)
     result={'params':sum(p.numel() for p in model.parameters()),'context':1024,'global_batch':64,
-            'backend':'chunk','precision':'fp16 autocast; FP32 delta state/solve and optimizer',
+            'backend':BACKEND,'precision':'fp16 autocast; FP32 delta state/solve and optimizer',
             'initial_scale':AMP_INIT_SCALE,'max_updates':update_cap,
             'wall_cap_seconds':wall_cap,'screens':[],'windows':[]}
     updates=0
@@ -374,8 +378,11 @@ def probe(root, wall_cap=600.0, update_cap=24, forced_micro=None):
 
 
 def main():
+    global BACKEND, FUSED_OPTIMIZER
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--phase',choices=('parity','resume','probe'),required=True)
+    p.add_argument('--backend', choices=('chunk', 'chunk-tc'), default='chunk')
+    p.add_argument('--fused-optimizer', action='store_true')
     p.add_argument('--root',type=Path,required=True)
     p.add_argument('--wall-cap',type=float,default=600.0,
                    help='measured-work cap in seconds for the probe phase')
@@ -385,9 +392,11 @@ def main():
                    help='measure this micro-batch instead of the automatic choice')
     p.add_argument('--out',type=Path,required=True)
     args=p.parse_args()
+    BACKEND, FUSED_OPTIMIZER = args.backend, args.fused_optimizer
     torch.set_num_threads(1)
     report={'phase':args.phase,'status':'RUNNING','python':platform.python_version(),
-            'torch':torch.__version__,'cuda':torch.version.cuda,'checks':{}}
+            'torch':torch.__version__,'cuda':torch.version.cuda,'backend':BACKEND,
+            'fused_optimizer':FUSED_OPTIMIZER,'checks':{}}
     try:
         assert torch.cuda.is_available(),'CUDA unavailable'
         report.update(gpu=torch.cuda.get_device_name(0),capability=torch.cuda.get_device_capability(0),

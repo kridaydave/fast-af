@@ -95,3 +95,41 @@ def test_p0_refuses_to_claim_gpu_validation_on_cpu(tmp_path, monkeypatch):
     assert main() == 1
     report = json.loads((tmp_path / 'p0.json').read_text())
     assert report['status'] == 'FAIL' and 'real T4' in report['error']
+
+
+def test_kaggle_package_is_private_bounded_and_excludes_unlisted_files(tmp_path):
+    import ast
+    import base64
+    import io
+    import zipfile
+    from scripts.package_kaggle_probe import package
+    source = corpus(tmp_path / 'source')
+    for split in ('train', 'validation'):
+        path = source / f'{split}-0.bin'
+        np.arange(5, 1029, dtype='<u2').tofile(path)
+    meta = json.loads((source / 'manifest.json').read_text())
+    meta.pop('fingerprint')
+    meta['seq_len'] = 1024
+    for split in ('train', 'validation'):
+        path = source / f'{split}-0.bin'
+        meta['splits'][split] = {'shards': [{'path': path.name, 'tokens': 1024,
+            'sequences': 1, 'sha256': filehash(path)}], 'tokens': 1024, 'sequences': 1}
+    write_manifest(source / 'tokenizer_manifest.json', {'schema': 'tokenizer/v1',
+        'vocab_size': 32000, 'special_ids': meta['special_ids']})
+    meta['tokenizer_manifest_sha256'] = filehash(source / 'tokenizer_manifest.json')
+    write_manifest(source / 'manifest.json', meta)
+    (source / 'do-not-upload.secret').write_text('private neighboring file')
+    out = package(source, tmp_path / 'package', 'example-owner')
+    config = json.loads((out / 'kernel-metadata.json').read_text())
+    assert config['is_private'] and config['machine_shape'] == 'NvidiaTeslaT4'
+    tree = ast.parse((out / 'benchmark.py').read_text())
+    call = next(n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute) and n.func.attr == 'b64decode')
+    archive = zipfile.ZipFile(io.BytesIO(base64.b64decode(ast.literal_eval(call.args[0]))))
+    assert 'probe-bundle/do-not-upload.secret' not in archive.namelist()
+    assert archive.read('probe-bundle/train-0.bin') == (source / 'train-0.bin').read_bytes()
+    assert 'scripts/distributed_training.py' in archive.namelist()
+    with pytest.raises(FileExistsError):
+        package(source, out, 'example-owner')
+    with pytest.raises(ValueError, match='owner'):
+        package(source, tmp_path / 'invalid', '../wrong')

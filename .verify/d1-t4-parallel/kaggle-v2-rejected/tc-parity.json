@@ -1,0 +1,1286 @@
+{
+  "phase": "parity",
+  "status": "FAIL",
+  "python": "3.13.16",
+  "torch": "2.11.0+cu130",
+  "cuda": "13.0",
+  "backend": "chunk-tc",
+  "fused_optimizer": true,
+  "checks": {
+    "core": [
+      {
+        "length": 1,
+        "mode": "fp32",
+        "output": {
+          "relative_l2": 0.00031130228380439135,
+          "max_abs": 0.00010863691568374634,
+          "reference_l2": 2.5592381954193115,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 2.018080318850365e-05,
+          "max_abs": 0.000265657901763916,
+          "reference_l2": 333.3155517578125,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.00026441872403345606,
+            "max_abs": 0.0011233389377593994,
+            "reference_l2": 31.106426239013672,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.00033243121766599124,
+            "max_abs": 0.013300418853759766,
+            "reference_l2": 269.94219970703125,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.0002644394964947035,
+            "max_abs": 0.000553429126739502,
+            "reference_l2": 15.105481147766113,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 2.934046678748588e-05,
+            "max_abs": 0.0023193359375,
+            "reference_l2": 103.36722564697266,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0005349789938866857,
+            "max_abs": 0.011327743530273438,
+            "reference_l2": 32.76427459716797,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 1.6891989003396457e-05,
+            "max_abs": 0.0002434253692626953,
+            "reference_l2": 332.154052734375,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 1,
+        "mode": "amp-fp16-v",
+        "output": {
+          "relative_l2": 0.0003113188313077167,
+          "max_abs": 0.00010881572961807251,
+          "reference_l2": 2.5592377185821533,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 1.9508148524029095e-05,
+          "max_abs": 0.0002416372299194336,
+          "reference_l2": 333.3155822753906,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.00026484929194376273,
+            "max_abs": 0.001123577356338501,
+            "reference_l2": 31.106422424316406,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.0003348818770611786,
+            "max_abs": 0.01729828119277954,
+            "reference_l2": 269.9390869140625,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00035020874918934616,
+            "max_abs": 0.0009765625,
+            "reference_l2": 15.105310440063477,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 2.934046678748588e-05,
+            "max_abs": 0.0023193359375,
+            "reference_l2": 103.36722564697266,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0005350250194599114,
+            "max_abs": 0.011333465576171875,
+            "reference_l2": 32.77106475830078,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 1.6891989003396457e-05,
+            "max_abs": 0.0002434253692626953,
+            "reference_l2": 332.154052734375,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 31,
+        "mode": "fp32",
+        "output": {
+          "relative_l2": 0.00031946102824080216,
+          "max_abs": 8.316338062286377e-05,
+          "reference_l2": 5.730097770690918,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.0002882462569819563,
+          "max_abs": 0.0003382563591003418,
+          "reference_l2": 41.891178131103516,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003066904211402809,
+            "max_abs": 0.0015063285827636719,
+            "reference_l2": 65.5794677734375,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.00030130945492510094,
+            "max_abs": 0.013029098510742188,
+            "reference_l2": 457.4373474121094,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00029952722181270173,
+            "max_abs": 0.0006705895066261292,
+            "reference_l2": 40.35415267944336,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.0001690316833045565,
+            "max_abs": 0.005573749542236328,
+            "reference_l2": 119.99239349365234,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.00035538507848988213,
+            "max_abs": 0.00779607892036438,
+            "reference_l2": 55.767127990722656,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.0001703145758869033,
+            "max_abs": 3.8623809814453125e-05,
+            "reference_l2": 12.63904094696045,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 31,
+        "mode": "amp-fp16-v",
+        "output": {
+          "relative_l2": 0.0003189533211265245,
+          "max_abs": 8.277222514152527e-05,
+          "reference_l2": 5.730093002319336,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.0002926539667890431,
+          "max_abs": 0.00031620264053344727,
+          "reference_l2": 41.89104080200195,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.00030577082856286233,
+            "max_abs": 0.0015250444412231445,
+            "reference_l2": 65.57946014404297,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.00030493143370650966,
+            "max_abs": 0.011483192443847656,
+            "reference_l2": 457.43701171875,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00040098428875847753,
+            "max_abs": 0.001953125,
+            "reference_l2": 40.35406494140625,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.00015439313136647842,
+            "max_abs": 0.0059356689453125,
+            "reference_l2": 119.99200439453125,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.00035465103590184534,
+            "max_abs": 0.007813125848770142,
+            "reference_l2": 55.77058410644531,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.0001703145758869033,
+            "max_abs": 3.8623809814453125e-05,
+            "reference_l2": 12.63904094696045,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 32,
+        "mode": "fp32",
+        "output": {
+          "relative_l2": 0.00031361319410362696,
+          "max_abs": 0.00010591372847557068,
+          "reference_l2": 6.425164222717285,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.00028657017394700154,
+          "max_abs": 0.0002595484256744385,
+          "reference_l2": 44.248016357421875,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003148675534482787,
+            "max_abs": 0.0011699795722961426,
+            "reference_l2": 71.7659912109375,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.00030302964306012264,
+            "max_abs": 0.012401580810546875,
+            "reference_l2": 477.5155334472656,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00030504923662666997,
+            "max_abs": 0.0008705258369445801,
+            "reference_l2": 40.88646697998047,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.00020012840603229098,
+            "max_abs": 0.008495330810546875,
+            "reference_l2": 134.85806274414062,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0003546279280882181,
+            "max_abs": 0.013353824615478516,
+            "reference_l2": 69.78272247314453,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.00015817021391755157,
+            "max_abs": 5.67510724067688e-05,
+            "reference_l2": 17.769367218017578,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 32,
+        "mode": "amp-fp16-v",
+        "output": {
+          "relative_l2": 0.0003138639226208981,
+          "max_abs": 0.00010591372847557068,
+          "reference_l2": 6.42516565322876,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.00028525090653341596,
+          "max_abs": 0.000311926007270813,
+          "reference_l2": 44.247962951660156,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003148061370846365,
+            "max_abs": 0.0012469291687011719,
+            "reference_l2": 71.76605224609375,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.0003036610283926514,
+            "max_abs": 0.010686874389648438,
+            "reference_l2": 477.5162658691406,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00040807518219298296,
+            "max_abs": 0.0009765625,
+            "reference_l2": 40.886566162109375,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.0002539990774860455,
+            "max_abs": 0.008525848388671875,
+            "reference_l2": 134.86534118652344,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.00035012792117600005,
+            "max_abs": 0.012928009033203125,
+            "reference_l2": 69.78501892089844,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.00015817021391755157,
+            "max_abs": 5.67510724067688e-05,
+            "reference_l2": 17.769367218017578,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 33,
+        "mode": "fp32",
+        "output": {
+          "relative_l2": 0.0003104913083455761,
+          "max_abs": 8.167512714862823e-05,
+          "reference_l2": 6.246371269226074,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.0002928902415885824,
+          "max_abs": 0.0004234611988067627,
+          "reference_l2": 48.39274215698242,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003124013447260451,
+            "max_abs": 0.0013472139835357666,
+            "reference_l2": 70.19710540771484,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.0003022723819496161,
+            "max_abs": 0.016631126403808594,
+            "reference_l2": 546.0796508789062,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00029219853805095353,
+            "max_abs": 0.000811457633972168,
+            "reference_l2": 47.120418548583984,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.0001678535887189729,
+            "max_abs": 0.0047667622566223145,
+            "reference_l2": 105.22657012939453,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0002922876035935751,
+            "max_abs": 0.008939981460571289,
+            "reference_l2": 78.87495422363281,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.00017049908684894325,
+            "max_abs": 4.5165419578552246e-05,
+            "reference_l2": 14.121809959411621,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 33,
+        "mode": "amp-fp16-v",
+        "output": {
+          "relative_l2": 0.0003106870301842696,
+          "max_abs": 8.126161992549896e-05,
+          "reference_l2": 6.246368408203125,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.0002877527544657106,
+          "max_abs": 0.0004379749298095703,
+          "reference_l2": 48.39249801635742,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003126955741726899,
+            "max_abs": 0.001354902982711792,
+            "reference_l2": 70.19709014892578,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.000299407269665445,
+            "max_abs": 0.015416383743286133,
+            "reference_l2": 546.0753784179688,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00039090878206175187,
+            "max_abs": 0.001953125,
+            "reference_l2": 47.120418548583984,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.00019395235537605996,
+            "max_abs": 0.0055904388427734375,
+            "reference_l2": 105.22990417480469,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.00029251620321704756,
+            "max_abs": 0.009412288665771484,
+            "reference_l2": 78.87579345703125,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.00017049908684894325,
+            "max_abs": 4.5165419578552246e-05,
+            "reference_l2": 14.121809959411621,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 65,
+        "mode": "fp32",
+        "output": {
+          "relative_l2": 0.00041336904846809804,
+          "max_abs": 2.9919669032096863e-05,
+          "reference_l2": 1.239809274673462,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.00029625128373634495,
+          "max_abs": 0.00028517842292785645,
+          "reference_l2": 19.58639907836914,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.00041413081395679104,
+            "max_abs": 0.0005027055740356445,
+            "reference_l2": 14.899698257446289,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.0003236618681916518,
+            "max_abs": 0.009645462036132812,
+            "reference_l2": 214.0348663330078,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00029402562252098377,
+            "max_abs": 0.0007010698318481445,
+            "reference_l2": 19.3984317779541,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.0009903640966931874,
+            "max_abs": 3.495439887046814e-05,
+            "reference_l2": 0.06535162776708603,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0002646039692204373,
+            "max_abs": 0.004848480224609375,
+            "reference_l2": 26.1946964263916,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.000340509806896234,
+            "max_abs": 5.123438313603401e-07,
+            "reference_l2": 0.014756424352526665,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 65,
+        "mode": "amp-fp16-v",
+        "output": {
+          "relative_l2": 0.00041298200956215114,
+          "max_abs": 2.923235297203064e-05,
+          "reference_l2": 1.2398124933242798,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.000301330124185822,
+          "max_abs": 0.00024086236953735352,
+          "reference_l2": 19.58646011352539,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.00039552929272834394,
+            "max_abs": 0.0004245638847351074,
+            "reference_l2": 14.899702072143555,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.0003176603613261812,
+            "max_abs": 0.009653091430664062,
+            "reference_l2": 214.0343017578125,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.0004011521465709505,
+            "max_abs": 0.001953125,
+            "reference_l2": 19.397939682006836,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.0012752399725037354,
+            "max_abs": 6.853044033050537e-05,
+            "reference_l2": 0.06536266207695007,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0002646163494995239,
+            "max_abs": 0.0048503875732421875,
+            "reference_l2": 26.193185806274414,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.000340509806896234,
+            "max_abs": 5.123438313603401e-07,
+            "reference_l2": 0.014756424352526665,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 127,
+        "mode": "fp32",
+        "output": {
+          "relative_l2": 0.00033426570723739,
+          "max_abs": 0.00010056793689727783,
+          "reference_l2": 7.729316711425781,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.00029957581129540613,
+          "max_abs": 0.0003229379653930664,
+          "reference_l2": 43.73318862915039,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003331052396312697,
+            "max_abs": 0.001329571008682251,
+            "reference_l2": 86.44373321533203,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.0002968018455829749,
+            "max_abs": 0.01619243621826172,
+            "reference_l2": 510.9948425292969,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.0003044628044366499,
+            "max_abs": 0.0008698999881744385,
+            "reference_l2": 43.841182708740234,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.0002554983138085151,
+            "max_abs": 0.00907135009765625,
+            "reference_l2": 84.37023162841797,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0002491688029540085,
+            "max_abs": 0.007518768310546875,
+            "reference_l2": 74.2490463256836,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.00030245888700659125,
+            "max_abs": 4.7594308853149414e-05,
+            "reference_l2": 6.576725482940674,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 127,
+        "mode": "amp-fp16-v",
+        "output": {
+          "relative_l2": 0.0003337746934129502,
+          "max_abs": 0.000100649893283844,
+          "reference_l2": 7.729314804077148,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.00029729288013359133,
+          "max_abs": 0.00038942694664001465,
+          "reference_l2": 43.733367919921875,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.00033577483839998296,
+            "max_abs": 0.001310497522354126,
+            "reference_l2": 86.44384002685547,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.00029789473690546107,
+            "max_abs": 0.010720252990722656,
+            "reference_l2": 510.9986572265625,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00039694207567265673,
+            "max_abs": 0.001953125,
+            "reference_l2": 43.8410758972168,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.0002626997117949525,
+            "max_abs": 0.009998321533203125,
+            "reference_l2": 84.36933135986328,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0002487209391858799,
+            "max_abs": 0.007465362548828125,
+            "reference_l2": 74.25019073486328,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.00030245888700659125,
+            "max_abs": 4.7594308853149414e-05,
+            "reference_l2": 6.576725482940674,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 128,
+        "mode": "fp32",
+        "output": {
+          "relative_l2": 0.00034398976840887066,
+          "max_abs": 7.483363151550293e-05,
+          "reference_l2": 6.706623554229736,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.00030037335412915525,
+          "max_abs": 0.0004323720932006836,
+          "reference_l2": 44.181915283203125,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003452431262172473,
+            "max_abs": 0.0010951757431030273,
+            "reference_l2": 75.15025329589844,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.0002855463572066697,
+            "max_abs": 0.011823177337646484,
+            "reference_l2": 520.9545288085938,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00030691247668622495,
+            "max_abs": 0.0008758604526519775,
+            "reference_l2": 44.015926361083984,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.00027564175814233697,
+            "max_abs": 0.0046749114990234375,
+            "reference_l2": 75.05675506591797,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.00024187363603465467,
+            "max_abs": 0.00806427001953125,
+            "reference_l2": 95.83918762207031,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.0003032540348219609,
+            "max_abs": 3.711879253387451e-05,
+            "reference_l2": 5.4749226570129395,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 128,
+        "mode": "amp-fp16-v",
+        "output": {
+          "relative_l2": 0.0003440567058168097,
+          "max_abs": 7.395446300506592e-05,
+          "reference_l2": 6.706622123718262,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.00030466270293261465,
+          "max_abs": 0.00045305490493774414,
+          "reference_l2": 44.18206024169922,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.00034183845040955976,
+            "max_abs": 0.0011667832732200623,
+            "reference_l2": 75.15021514892578,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.00029205830557385044,
+            "max_abs": 0.01216617226600647,
+            "reference_l2": 520.9554443359375,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.0004092895021931214,
+            "max_abs": 0.001953125,
+            "reference_l2": 44.015743255615234,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.00039798420520536934,
+            "max_abs": 0.009225130081176758,
+            "reference_l2": 75.06491088867188,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.00024468293981204896,
+            "max_abs": 0.008947372436523438,
+            "reference_l2": 95.84306335449219,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.0003032540348219609,
+            "max_abs": 3.711879253387451e-05,
+            "reference_l2": 5.4749226570129395,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 129,
+        "mode": "fp32",
+        "output": {
+          "relative_l2": 0.0003355456248407577,
+          "max_abs": 8.626189082860947e-05,
+          "reference_l2": 7.0780439376831055,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.0003027335145056335,
+          "max_abs": 0.00044909119606018066,
+          "reference_l2": 50.43569564819336,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003422058814728866,
+            "max_abs": 0.0011748075485229492,
+            "reference_l2": 80.07881164550781,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.0003119718198694071,
+            "max_abs": 0.013256549835205078,
+            "reference_l2": 567.5970458984375,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00029705835931073264,
+            "max_abs": 0.0008394420146942139,
+            "reference_l2": 50.6015625,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.0004910696280876096,
+            "max_abs": 0.015460968017578125,
+            "reference_l2": 70.6787338256836,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0003486307926923053,
+            "max_abs": 0.007674217224121094,
+            "reference_l2": 70.80938720703125,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.000302892155311954,
+            "max_abs": 5.6527554988861084e-05,
+            "reference_l2": 6.047859191894531,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 129,
+        "mode": "amp-fp16-v",
+        "output": {
+          "relative_l2": 0.00033591042366596963,
+          "max_abs": 8.608121424913406e-05,
+          "reference_l2": 7.078046798706055,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.0003034588113826134,
+          "max_abs": 0.0003918111324310303,
+          "reference_l2": 50.43550109863281,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.000343531436859904,
+            "max_abs": 0.001234292984008789,
+            "reference_l2": 80.07875061035156,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.00031575185456062703,
+            "max_abs": 0.01654815673828125,
+            "reference_l2": 567.5917358398438,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00039961919002671017,
+            "max_abs": 0.001953125,
+            "reference_l2": 50.60186767578125,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.000469147251409046,
+            "max_abs": 0.007572650909423828,
+            "reference_l2": 70.673828125,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.0003566473010719937,
+            "max_abs": 0.0075588226318359375,
+            "reference_l2": 70.81144714355469,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.000302892155311954,
+            "max_abs": 5.6527554988861084e-05,
+            "reference_l2": 6.047859191894531,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 257,
+        "mode": "fp32",
+        "output": {
+          "relative_l2": 0.00035920053513475205,
+          "max_abs": 0.00011330842971801758,
+          "reference_l2": 8.133177757263184,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.00029710310536179313,
+          "max_abs": 0.00037783384323120117,
+          "reference_l2": 44.40526580810547,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003542524937087959,
+            "max_abs": 0.0014258623123168945,
+            "reference_l2": 92.4659652709961,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.00030578569337959423,
+            "max_abs": 0.0113067626953125,
+            "reference_l2": 517.2119750976562,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00029744971910471895,
+            "max_abs": 0.0006952285766601562,
+            "reference_l2": 43.92327117919922,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.0004182160655995924,
+            "max_abs": 0.011188507080078125,
+            "reference_l2": 58.07832717895508,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.00043110109398968965,
+            "max_abs": 0.011025547981262207,
+            "reference_l2": 69.36021423339844,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.00029884288259524397,
+            "max_abs": 3.412365913391113e-05,
+            "reference_l2": 6.0460004806518555,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      },
+      {
+        "length": 257,
+        "mode": "amp-fp16-v",
+        "output": {
+          "relative_l2": 0.0003591230714149738,
+          "max_abs": 0.00011337175965309143,
+          "reference_l2": 8.133179664611816,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "state": {
+          "relative_l2": 0.00029843255488064036,
+          "max_abs": 0.0003647804260253906,
+          "reference_l2": 44.40559387207031,
+          "allowed_relative": 0.002,
+          "allowed_absolute_l2": 2e-05
+        },
+        "gradients": {
+          "q": {
+            "relative_l2": 0.0003568882149204539,
+            "max_abs": 0.0014165639877319336,
+            "reference_l2": 92.46601104736328,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "k": {
+            "relative_l2": 0.0003027534244363967,
+            "max_abs": 0.011161446571350098,
+            "reference_l2": 517.2146606445312,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "v": {
+            "relative_l2": 0.00039850693344507186,
+            "max_abs": 0.0009765625,
+            "reference_l2": 43.923301696777344,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "decay": {
+            "relative_l2": 0.00039475494630075773,
+            "max_abs": 0.00870513916015625,
+            "reference_l2": 58.08091735839844,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "beta": {
+            "relative_l2": 0.00042888270557362893,
+            "max_abs": 0.011022448539733887,
+            "reference_l2": 69.35901641845703,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          },
+          "initial_state": {
+            "relative_l2": 0.00029884288259524397,
+            "max_abs": 3.412365913391113e-05,
+            "reference_l2": 6.0460004806518555,
+            "allowed_relative": 0.003,
+            "allowed_absolute_l2": 3e-05
+          }
+        }
+      }
+    ],
+    "layer": [
+      {
+        "mode": "amp-fp16",
+        "amp_init_scale": 8.0,
+        "output": {
+          "relative_l2": 0.001155624323189583,
+          "max_abs": 8.986331522464752e-06,
+          "reference_l2": 0.2635404169559479,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-06
+        },
+        "state": {
+          "relative_l2": 0.0008063235876856523,
+          "max_abs": 2.0876526832580566e-05,
+          "reference_l2": 0.7657170295715332,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-06
+        },
+        "conv": [
+          {
+            "relative_l2": 0.00035246486190547254,
+            "max_abs": 0.000704646110534668,
+            "reference_l2": 20.07644271850586,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          {
+            "relative_l2": 0.0003687720028494627,
+            "max_abs": 0.0007470846176147461,
+            "reference_l2": 19.85982894897461,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          {
+            "relative_l2": 0.000369325410590244,
+            "max_abs": 0.000765681266784668,
+            "reference_l2": 27.57173728942871,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          }
+        ],
+        "input_gradient": {
+          "relative_l2": 0.0012044505607704161,
+          "max_abs": 1.8139835447072983e-05,
+          "reference_l2": 0.45532384514808655,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-06
+        },
+        "parameter_gradients": {
+          "A_log": {
+            "relative_l2": 0.001969999664484714,
+            "max_abs": 9.077601134777069e-05,
+            "reference_l2": 0.06091488152742386,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "dt_bias": {
+            "relative_l2": 0.0019673699350107195,
+            "max_abs": 9.038858115673065e-05,
+            "reference_l2": 0.060748010873794556,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "q_proj.weight": {
+            "relative_l2": 0.0011708426563126575,
+            "max_abs": 0.0003180918865837157,
+            "reference_l2": 12.430821418762207,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "k_proj.weight": {
+            "relative_l2": 0.0011422368462284155,
+            "max_abs": 0.00027570128440856934,
+            "reference_l2": 10.18012809753418,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "v_proj.weight": {
+            "relative_l2": 0.0011095059983928326,
+            "max_abs": 0.0001511014997959137,
+            "reference_l2": 9.351503372192383,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "a_proj.weight": {
+            "relative_l2": 0.0017086116882509476,
+            "max_abs": 7.327646017074585e-05,
+            "reference_l2": 0.4100412428379059,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "b_proj.weight": {
+            "relative_l2": 0.0010798301694521758,
+            "max_abs": 0.00025083962827920914,
+            "reference_l2": 2.3830225467681885,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "g_proj.weight": {
+            "relative_l2": 0.0011732447386748905,
+            "max_abs": 0.00031185150146484375,
+            "reference_l2": 13.101653099060059,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "o_proj.weight": {
+            "relative_l2": 0.0011600691402718318,
+            "max_abs": 0.0014706850051879883,
+            "reference_l2": 74.41127014160156,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "convs.0.weight": {
+            "relative_l2": 0.0011506149264880134,
+            "max_abs": 0.0015277564525604248,
+            "reference_l2": 12.306198120117188,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "convs.1.weight": {
+            "relative_l2": 0.001152622950565153,
+            "max_abs": 0.001649618148803711,
+            "reference_l2": 10.32718563079834,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "convs.2.weight": {
+            "relative_l2": 0.0011244628719626725,
+            "max_abs": 0.0010033249855041504,
+            "reference_l2": 9.791141510009766,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          },
+          "output_norm.weight": {
+            "relative_l2": 0.001269213565688411,
+            "max_abs": 8.306093513965607e-05,
+            "reference_l2": 0.23881985247135162,
+            "allowed_relative": 0.05,
+            "allowed_absolute_l2": 1e-06
+          }
+        },
+        "prefix_cache_unchanged": true
+      }
+    ]
+  },
+  "gpu": "Tesla T4",
+  "capability": [
+    7,
+    5
+  ],
+  "memory_bytes": 15636037632,
+  "source_sha256": {
+    "d1_model.py": "e918d2b68a684f4de172826eb71c9d030d4e0ea985a6d2c3b9a25cbf77b00110",
+    "train_diffusion.py": "75858c8b78657954df47067f90ac098e11e8abbc163a93e08849217f33dd78e5",
+    "check_gdn_t4.py": "a0c40d416eae7dd48ab6e247548b7b22d1ed6ef232d64e3a8298826b3e68d3e7"
+  },
+  "error": "cached logits: {'relative_l2': 0.00303925741814576, 'max_abs': 0.0076904296875, 'reference_l2': 511.98834228515625, 'allowed_relative': 0.003, 'allowed_absolute_l2': 1e-05}",
+  "traceback": "Traceback (most recent call last):\n  File \"/kaggle/working/d1-opt/src/scripts/check_gdn_t4.py\", line 412, in main\n    report['checks']['full_model']=full_parity()\n                                   ~~~~~~~~~~~^^\n  File \"/kaggle/working/d1-opt/src/scripts/check_gdn_t4.py\", line 151, in full_parity\n    'cached':comparison(actual[:,32:64],cached,0.003,1e-5,'cached logits'),\n             ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/kaggle/working/d1-opt/src/scripts/check_gdn_t4.py\", line 43, in comparison\n    raise AssertionError(f'{label}: {result}')\nAssertionError: cached logits: {'relative_l2': 0.00303925741814576, 'max_abs': 0.0076904296875, 'reference_l2': 511.98834228515625, 'allowed_relative': 0.003, 'allowed_absolute_l2': 1e-05}\n"
+}

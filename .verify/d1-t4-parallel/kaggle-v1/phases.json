@@ -1,0 +1,22 @@
+[
+  {
+    "phase": "native-parity",
+    "exit_code": 0,
+    "seconds": 44.78690959599999
+  },
+  {
+    "phase": "tc-parity",
+    "exit_code": 0,
+    "seconds": 17.02093707399996
+  },
+  {
+    "phase": "parallel-gradients",
+    "exit_code": 0,
+    "seconds": 15.561030246999962
+  },
+  {
+    "phase": "baseline",
+    "exit_code": 1,
+    "seconds": 26.393862297999988
+  }
+]

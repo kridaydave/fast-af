@@ -1,6 +1,6 @@
 # D1 training recipe and T4 pilot budget
 
-Updated 2026-11-15 with measured T4 infrastructure results; pilot authorization remains gated. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; the optimized T4 backend passes the 200-update P0 speed gate. The evaluation policy and production wall-time, checkpoint and upload controls still block P1. The P0/P1 budget ceiling is six GPU-hours. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
+Updated 2026-11-15 with measured T4 infrastructure results; pilot authorization remains gated. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; the native chunk-v2 backend passed the 200-attempt P0 speed gate. The evaluation policy and production wall-time, checkpoint and upload controls still block P1. The P0/P1 budget ceiling is six GPU-hours. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
 
 The [project plan](PROJECT_PLAN.md) governs the general-purpose base, specialists
 and eventual roughly 2B-total-parameter MoE. **D1's 100M label refers to model
@@ -9,6 +9,12 @@ approximately 100M-token pilot is an inherited infrastructure proposal using
 training-v1. It is not the user's model-size requirement or an approved data
 recipe/token budget for the new general base. The six-hour allocation below
 covers that conditional D1 smoke plan, not all specialist and MoE training.
+
+The newer Tensor Core and two-T4 variants have a separate
+[bounded measurement record](../.verify/d1-t4-parallel/README.md) and
+[execution guide](T4_PARALLEL.md). They require their own P0 and quality
+requalification. The current project ledger includes subsequent R&D; the old
+future reservation below is historical and must not be added to a fresh budget.
 
 Labels follow repo practice. MEASURED means a repo run produced it. PAPER means a cited primary source. DERIVED means arithmetic from repo numbers. ESTIMATE means a guess that the probe must replace. UNCONFIRMED means not yet checked.
 

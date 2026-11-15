@@ -260,7 +260,7 @@ def test_invalid_backend_does_not_fall_back_to_reference(tiny):
 
     for construct in (lambda: D1LM(64, 8, tiny, backend='typo'),
                       lambda: GatedDeltaNet(tiny, 'typo'), lambda: backend_info('typo')):
-        with pytest.raises(ValueError, match='backend must be torch, chunk or fla'):
+        with pytest.raises(ValueError, match='backend must be torch, chunk, chunk-tc or fla'):
             construct()
 
 

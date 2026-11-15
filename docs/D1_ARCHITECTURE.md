@@ -44,6 +44,15 @@ particular hybrid remains an experimental question.
 Attention still stores a growing KV cache. Only GDN's recurrent and convolution
 states have fixed size; the whole hybrid does not have constant-memory caching.
 
+The optional `chunk-tc` version 3 backend adds Tensor Core GEMMs with FP32
+outputs and gradients, FP32 state/solve, and FP32 residuals/normalization.
+`--fused-optimizer` selects fused AdamW; `--world-size 2` enables one-process-per-
+T4 DDP in one Kaggle runtime. Batch size remains the global micro-batch. See
+[T4 parallel execution](T4_PARALLEL.md) and its separate bounded validation
+record. These variants do not inherit the native version-2 200-attempt P0
+qualification. The FP16 residual experiment was rejected after failing cache
+parity; there is no BF16 or unsupported Triton execution on T4.
+
 ## Training objective and accounting
 
 For each micro-batch, sample one shared frontier uniformly from blocks with

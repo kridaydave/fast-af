@@ -1,0 +1,6 @@
+{"model": "d1", "params": 109137632, "backend": {"name": "torch-chunked-tensorcore", "version": "1", "chunk_size": "128", "short_chunk": "power-of-two", "matmul": "fp16-input-fp32-output-and-gradient", "state_solve": "fp32", "torch": "2.14.1+cu130"}, "metric": "masked_ce"}
+resumed /content/d1-opt/resume-interrupted/checkpoint-000003.pt at step 3 tokens 3072
+{"step": 4, "masked_ce": 9.954984392438616, "lr": 0.000165, "tokens_seen": 4096, "tokens_processed": 1792, "tokens_scored": 83, "grad_norm": 11.64874267578125, "optimizer_steps": 4, "optimizer_step_skipped": false}
+{"step": 5, "masked_ce": 10.128125, "lr": 6.954058453981609e-05, "tokens_seen": 5120, "tokens_processed": 2144, "tokens_scored": 103, "grad_norm": 13.919425010681152, "optimizer_steps": 5, "optimizer_step_skipped": false}
+{"step": 6, "masked_ce": 9.947545369466146, "lr": 2.9999999999999997e-05, "tokens_seen": 6144, "tokens_processed": 2688, "tokens_scored": 124, "grad_norm": 9.753228187561035, "optimizer_steps": 6, "optimizer_step_skipped": false, "val_masked_ce": 9.98774242401123}
+{"config_hash": "dfa5aa85011aa07d6e757618a49cbcfc4cd38ac80bccbca0cd57cb3cd8264261", "params": 109137632, "metric": "masked_ce", "tokens_processed": 2688, "tokens_scored": 124, "step": 6, "tokens_seen": 6144, "val_masked_ce": [9.98774242401123], "checkpoints": ["checkpoint-000006.pt"]}

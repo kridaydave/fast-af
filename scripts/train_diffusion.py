@@ -28,9 +28,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 if __package__:
+    from .distributed_training import DistributedTraining
     from .prepare_corpus import canonical, digest, filehash
     from .d1_model import D1Config, D1LM, backend_info, require_fla_device
 else:
+    from distributed_training import DistributedTraining
     from prepare_corpus import canonical, digest, filehash
     from d1_model import D1Config, D1LM, backend_info, require_fla_device
 
@@ -414,6 +416,8 @@ class TrainConfig:
     profile: str = 'smoke'
     d1: D1Config = field(default_factory=D1Config)
     gdn_backend: str = 'torch'
+    fused_optimizer: bool = False
+    world_size: int = 1
     p1: bool = False
     verify_hashes: bool = False
 
@@ -424,10 +428,20 @@ CONFIG_HASH_EXCLUDE = ('out', 'verify_hashes')
 
 def config_hash_of(cfg):
     payload = {key: value for key, value in asdict(cfg).items() if key not in CONFIG_HASH_EXCLUDE}
+    # Keep default single-device checkpoints compatible with the earlier trainer.
+    if not payload['fused_optimizer']:
+        del payload['fused_optimizer']
+    if payload['world_size'] == 1:
+        del payload['world_size']
     return digest(canonical(payload).encode())
 
 
 def _validate(cfg):
+    if type(cfg.world_size) is not int or cfg.world_size not in (1, 2):
+        raise ValueError('world_size must be 1 or 2')
+    if cfg.world_size > 1 and (cfg.profile != 'd1' or cfg.device != 'cuda'
+                               or cfg.batch_size % cfg.world_size):
+        raise ValueError('two-GPU training requires D1, CUDA and an even global micro-batch')
     for name in ('lr', 'grad_clip', 'weight_decay', 'eps', 'amp_init_scale'):
         if not math.isfinite(getattr(cfg, name)):
             raise ValueError(f'{name} must be finite')
@@ -467,10 +481,10 @@ def _validate(cfg):
         raise ValueError('profile must be smoke or d1')
     if not isinstance(cfg.d1, D1Config):
         raise ValueError('d1 must be a D1Config')
-    if cfg.gdn_backend not in ('torch', 'chunk', 'fla'):
-        raise ValueError('gdn_backend must be torch, chunk or fla')
+    if cfg.gdn_backend not in ('torch', 'chunk', 'chunk-tc', 'fla'):
+        raise ValueError('gdn_backend must be torch, chunk, chunk-tc or fla')
     if cfg.p1:
-        missing = ['GPU cache/gradient/resume validation and measured P0 throughput are pending']
+        missing = ['cumulative GPU budget, checkpoint retention/upload and frozen evaluation protocol are pending; requalify P0 for the selected configuration']
         if cfg.profile != 'd1':
             missing.append('profile=d1')
         if cfg.device != 'cuda':
@@ -487,6 +501,10 @@ def _validate(cfg):
             raise ValueError('P1 requested without prerequisites: ' + ', '.join(missing))
     if (cfg.profile == 'd1') != (cfg.mask_mode == 'blockwise'):
         raise ValueError('D1 requires blockwise masking; smoke requires classical masking')
+    if cfg.fused_optimizer and cfg.device != 'cuda':
+        raise ValueError('fused_optimizer requires CUDA')
+    if cfg.gdn_backend == 'chunk-tc' and not (cfg.profile == 'd1' and cfg.device == 'cuda' and cfg.amp):
+        raise ValueError('chunk-tc requires D1 with CUDA fp16 autocast')
     if cfg.profile == 'd1' and cfg.gdn_backend == 'fla' and not (cfg.device == 'cuda' and cfg.amp):
         raise ValueError('FLA backend requires device=cuda and amp=true')
     if cfg.profile == 'd1' and cfg.gdn_backend == 'fla':
@@ -519,7 +537,8 @@ def build_optimizer(model, cfg):
         groups.append({'params': decay, 'weight_decay': cfg.weight_decay})
     if no_decay:
         groups.append({'params': no_decay, 'weight_decay': 0.0})
-    return torch.optim.AdamW(groups, lr=cfg.lr, betas=(cfg.beta1, cfg.beta2), eps=cfg.eps)
+    return torch.optim.AdamW(groups, lr=cfg.lr, betas=(cfg.beta1, cfg.beta2), eps=cfg.eps,
+                             fused=True if cfg.fused_optimizer else None)
 
 
 def build_model(cfg, vocab, seq_len):
@@ -569,7 +588,7 @@ def git_commit():
 
 
 def checkpoint_payload(model, optimizer, scheduler, scaler, loader, step, tokens_seen,
-                       config_hash, provenance, tokens_processed, tokens_scored):
+                       config_hash, provenance, tokens_processed, tokens_scored, *, distributed=False):
     return {
         'format_version': CHECKPOINT_VERSION,
         'model': model.state_dict(),
@@ -585,7 +604,7 @@ def checkpoint_payload(model, optimizer, scheduler, scaler, loader, step, tokens
         'provenance': provenance,
         'rng': {'python': random.getstate(), 'numpy': np.random.get_state(),
                 'torch': torch.get_rng_state(),
-                'cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None},
+                'cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() and not distributed else None},
         'library_versions': library_versions(),
         'backend': backend_info(model.backend) if isinstance(model, D1LM) else None,
         'git_commit': git_commit(),
@@ -694,8 +713,18 @@ def evaluate(cfg, model, vocab, seq_len, batches=8, device='cpu'):
 
 def train(cfg, resume=None, log=print):
     _validate(cfg)
+    distributed = DistributedTraining(cfg.world_size, cfg.device)
+    try:
+        return _train(cfg, resume, log, distributed)
+    finally:
+        distributed.close()
+
+
+def _train(cfg, resume, log, distributed):
     torch.set_num_threads(cfg.threads)
-    device = torch.device(cfg.device)
+    device = distributed.device
+    if distributed.rank:
+        log = lambda *_: None
     meta = load_manifest(cfg.bundle, cfg.verify_hashes)
     provenance = bundle_provenance(cfg.bundle, meta)
     vocab = bundle_vocab(cfg.bundle)
@@ -718,6 +747,8 @@ def train(cfg, resume=None, log=print):
     scaler = torch.amp.GradScaler(device.type, enabled=cfg.amp, init_scale=cfg.amp_init_scale)
     loader = ShardLoader(cfg.bundle, 'train', cfg.batch_size, cfg.seed, cfg.verify_hashes,
                          vocab=vocab)
+    corruption = (torch.Generator(device=device).manual_seed(cfg.seed)
+                  if cfg.world_size > 1 else None)
     step, tokens_seen, tokens_processed, tokens_scored = 0, 0, 0, 0
     if resume:
         payload = load_checkpoint(resume)
@@ -743,17 +774,34 @@ def train(cfg, resume=None, log=print):
                 or not 0 < tokens_scored <= tokens_processed <= tokens_seen):
             raise ValueError('checkpoint processed/scored token counts are inconsistent')
         restore_rng(payload)
+        if cfg.world_size > 1:
+            distributed.restore_rng(payload['distributed'])
+            corruption.set_state(payload['corruption_rng'])
         log(f'resumed {resume} at step {step} tokens {tokens_seen}')
     if step >= cfg.steps:
         raise ValueError(f'checkpoint already at step {step} >= steps {cfg.steps}')
+    parallel = distributed.wrap(model)
     out.mkdir(parents=True, exist_ok=True)
-    (out / 'config.json').write_text(
+    if distributed.rank == 0:
+        (out / 'config.json').write_text(
         json.dumps({**asdict(cfg), 'config_hash': config_hash,
                     'provenance': provenance, 'library_versions': library_versions(),
                     'model_params': params, 'metric': 'masked_ce', 'backend': backend,
                     'git_commit': git_commit(),
                     'gpu': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None},
                    indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    def checkpoint(path):
+        payload = checkpoint_payload(
+            model, optimizer, scheduler, scaler, loader, step, tokens_seen,
+            config_hash, provenance, tokens_processed, tokens_scored, distributed=cfg.world_size > 1)
+        if cfg.world_size > 1:
+            payload['distributed'] = distributed.save_rng()
+            payload['corruption_rng'] = corruption.get_state()
+        if distributed.rank == 0:
+            save_checkpoint(path, payload)
+            (out / 'checkpoint-last.txt').write_text(path.name, encoding='utf-8')
+        distributed.barrier()
+
     checkpoints, losses, val_losses = [], [], []
     for _ in range(step, cfg.steps):
         micro = []
@@ -761,7 +809,7 @@ def train(cfg, resume=None, log=print):
         for _ in range(cfg.grad_accum):
             targets = next(loader).to(device)
             token_total += targets.numel()
-            inputs, loss_mask = corrupt_batch(cfg, targets)
+            inputs, loss_mask = corrupt_batch(cfg, targets, corruption)
             targets = targets[:, :inputs.shape[1]]
             processed_total += targets.numel()
             masked = int(loss_mask.sum())
@@ -770,21 +818,24 @@ def train(cfg, resume=None, log=print):
             micro.append((inputs, targets, loss_mask, masked))
             masked_total += masked
         optimizer.zero_grad(set_to_none=True)
-        loss_sum = 0.0
-        for inputs, targets, loss_mask, masked in micro:
-            if cfg.amp:
-                with torch.autocast(device_type=device.type, dtype=torch.float16):
-                    loss = model_masked_loss(model, inputs, targets, loss_mask)
-            else:
-                loss = model_masked_loss(model, inputs, targets, loss_mask)
-            if not bool(torch.isfinite(loss)):
-                raise FloatingPointError(f'non-finite loss at step {step + 1}')
-            weighted = loss.float() * (masked / masked_total)
-            scaler.scale(weighted).backward()
-            loss_sum += float(loss.detach()) * masked
+        loss_sum = torch.zeros((), device=device)
+        for index, (inputs, targets, loss_mask, masked) in enumerate(micro):
+            with distributed.sync_context(parallel, index == len(micro) - 1):
+                with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=cfg.amp):
+                    if cfg.world_size > 1:
+                        summed = distributed.loss(parallel, inputs, targets, loss_mask, cfg.d1.block_size)
+                        weighted = summed.float() * (cfg.world_size / masked_total)
+                    else:
+                        loss = model_masked_loss(model, inputs, targets, loss_mask)
+                        summed = loss.float() * masked
+                        weighted = summed / masked_total
+                if not distributed.finite(summed):
+                    raise FloatingPointError(f'non-finite loss at step {step + 1}')
+                scaler.scale(weighted).backward()
+                loss_sum += summed.detach()
         lr_used = optimizer.param_groups[0]['lr']
         grad_norm, skipped = optimizer_step(model, optimizer, scheduler, scaler, cfg.grad_clip)
-        loss = loss_sum / masked_total
+        loss = distributed.loss_sum(loss_sum) / masked_total
         if not math.isfinite(loss):
             raise FloatingPointError(f'non-finite loss at step {step + 1}')
         step += 1
@@ -796,27 +847,22 @@ def train(cfg, resume=None, log=print):
                   'tokens_scored': tokens_scored, 'grad_norm': grad_norm if not skipped else None,
                   'optimizer_steps': scheduler.last_epoch,
                   'optimizer_step_skipped': skipped}
-        if cfg.eval_every and step % cfg.eval_every == 0:
+        if cfg.eval_every and step % cfg.eval_every == 0 and distributed.rank == 0:
             record['val_masked_ce'] = evaluate(cfg, model, vocab, seq_len,
                                           batches=None if cfg.eval_full else cfg.eval_batches,
                                           device=device)
             val_losses.append(record['val_masked_ce'])
+        distributed.barrier()
         log(json.dumps(record))
         losses.append(record['masked_ce'])
         if cfg.checkpoint_every and step % cfg.checkpoint_every == 0:
             path = out / f'checkpoint-{step:06d}.pt'
-            save_checkpoint(path, checkpoint_payload(
-                model, optimizer, scheduler, scaler, loader, step, tokens_seen,
-                config_hash, provenance, tokens_processed, tokens_scored))
-            (out / 'checkpoint-last.txt').write_text(path.name, encoding='utf-8')
+            checkpoint(path)
             checkpoints.append(path.name)
     if not checkpoints or checkpoints[-1] != f'checkpoint-{step:06d}.pt':
         path = out / f'checkpoint-{step:06d}.pt'
-        save_checkpoint(path, checkpoint_payload(
-            model, optimizer, scheduler, scaler, loader, step, tokens_seen,
-            config_hash, provenance, tokens_processed, tokens_scored))
+        checkpoint(path)
         checkpoints.append(path.name)
-        (out / 'checkpoint-last.txt').write_text(path.name, encoding='utf-8')
     return {'config_hash': config_hash, 'params': params, 'metric': 'masked_ce',
             'tokens_processed': tokens_processed, 'tokens_scored': tokens_scored,
             'step': step, 'tokens_seen': tokens_seen, 'losses': losses,
@@ -855,7 +901,10 @@ def main(argv=None):
     p.add_argument('--amp-init-scale', type=float, default=65536.0)
     p.add_argument('--profile', choices=('smoke', 'd1'), default='smoke')
     p.add_argument('--d1-config', type=Path, help='JSON D1Config; defaults to the frozen 16-layer model')
-    p.add_argument('--gdn-backend', choices=('torch', 'chunk', 'fla'), default='torch')
+    p.add_argument('--gdn-backend', choices=('torch', 'chunk', 'chunk-tc', 'fla'), default='torch')
+    p.add_argument('--fused-optimizer', action='store_true')
+    p.add_argument('--world-size', type=int, choices=(1, 2), default=1,
+                   help='two ranks via torchrun; batch-size remains the GLOBAL micro-batch')
     p.add_argument('--p1', action='store_true')
     p.add_argument('--verify-hashes', action='store_true')
     a = p.parse_args(argv)
@@ -873,12 +922,13 @@ def main(argv=None):
                       weight_decay=a.weight_decay, beta1=a.beta1, beta2=a.beta2,
                       eps=a.eps, threads=a.threads, device=a.device, amp=a.amp,
                       amp_init_scale=a.amp_init_scale,
-                      profile=a.profile, d1=d1, gdn_backend=a.gdn_backend, p1=a.p1, verify_hashes=a.verify_hashes)
+                      profile=a.profile, d1=d1, gdn_backend=a.gdn_backend, fused_optimizer=a.fused_optimizer, world_size=a.world_size, p1=a.p1, verify_hashes=a.verify_hashes)
     try:
         summary = train(cfg, resume=a.resume)
     except (ValueError, OSError, RuntimeError, FloatingPointError) as error:
         p.exit(2, f'error: {error}\n')
-    print(json.dumps({key: value for key, value in summary.items() if key != 'losses'}))
+    if cfg.world_size == 1 or int(os.environ.get('RANK', '0')) == 0:
+        print(json.dumps({key: value for key, value in summary.items() if key != 'losses'}))
 
 
 if __name__ == '__main__':

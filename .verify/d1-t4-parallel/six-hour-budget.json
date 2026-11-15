@@ -1,0 +1,40 @@
+{
+  "ceiling_physical_gpu_hours": 6,
+  "prior_colab_event_seconds": 6442,
+  "new_colab_sessions": [
+    {
+      "name": "d1-t4-opt-v3",
+      "start_utc": "2026-11-15T07:35:15Z",
+      "end_utc": "2026-11-15T08:12:13Z",
+      "event_seconds": 2218
+    },
+    {
+      "name": "d1-t4-opt-v3-final",
+      "start_utc": "2026-11-15T08:20:17Z",
+      "end_utc": "2026-11-15T08:29:16Z",
+      "event_seconds": 539
+    }
+  ],
+  "kaggle_before_final_provider_runtime_counter_seconds": 189.288,
+  "kaggle_completed_work": [
+    {
+      "device_count": 2,
+      "job_wall_seconds": 104.78721320700004,
+      "gpu_seconds_excluding_startup_teardown": 209.574428486
+    },
+    {
+      "device_count": 2,
+      "job_wall_seconds": 45.483155009,
+      "gpu_seconds_excluding_startup_teardown": 90.96631194999998
+    }
+  ],
+  "final_notebook_runtime_cap_seconds": 1200,
+  "final_notebook_allocated_devices": 2,
+  "overhead_reserve_physical_gpu_hours": 0.15,
+  "historical_future_reservation_gpu_hours_withdrawn": 4.15,
+  "policy": "Charge both T4s for Kaggle runtime, including idle controls and CPU checks. Provider quota is a separate counter. The whole observed provider runtime counter is conservatively charged at two devices; this may overcount unrelated usage. Event durations are not a provider billing meter. Startup/teardown uncertainty is reserved separately.",
+  "final_job_status": "pending",
+  "p1_authorized": false,
+  "conservative_debit_if_final_uses_full_cap_gpu_hours": 3.4771044444444446,
+  "remaining_if_full_cap_used_gpu_hours": 2.5228955555555554
+}

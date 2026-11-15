@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Real two-T4 gradient and process-resume checks, bounded by the caller."""
+import argparse
+import gc
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+
+import torch
+from torch.nn import functional as F
+
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.d1_model import D1LM
+from scripts.distributed_training import DistributedTraining
+from scripts.check_gdn_t4 import comparison
+from scripts.train_diffusion import load_checkpoint
+
+
+def gradient_check(out, backend):
+    d = DistributedTraining(2, 'cuda')
+    try:
+        assert torch.cuda.get_device_name(d.device) == 'Tesla T4'
+        assert torch.cuda.get_device_capability(d.device) == (7, 5)
+        torch.set_num_threads(1)
+        torch.manual_seed(19)
+        torch.backends.cuda.matmul.allow_tf32 = False
+        model = D1LM(32000, 1024, backend=backend).to(d.device)
+        reference = D1LM(32000, 1024, backend=backend).to(d.device)
+        reference.load_state_dict(model.state_dict())
+        parallel = d.wrap(model)
+        generator = torch.Generator().manual_seed(31)
+        targets = torch.randint(5, 32000, (4, 64), generator=generator).to(d.device)
+        mask = torch.zeros_like(targets, dtype=torch.bool)
+        mask[2, -2:] = True
+        mask[3, -16:] = True
+        inputs = targets.masked_fill(mask, 0)
+        # Rank 0 has no scored tokens. Both must still backpropagate/reduce.
+        with torch.autocast('cuda', dtype=torch.float16):
+            expected = F.cross_entropy(reference(inputs, logits_mask=mask), targets[mask])
+            summed = d.loss(parallel, inputs, targets, mask, 32)
+        expected.backward()
+        (summed * (2 / int(mask.sum()))).backward()
+        metrics = {}
+        for (name, a), (_, b) in zip(reference.named_parameters(), model.named_parameters()):
+            assert a.grad is not None and b.grad is not None, name
+            metrics[name] = comparison(a.grad, b.grad, 0.05, 1e-7, name)
+        actual_loss = d.loss_sum(summed.detach()) / int(mask.sum())
+        assert abs(float(expected.detach()) - actual_loss) < 0.003
+        if d.rank == 0:
+            Path(out).write_text(json.dumps({'status': 'PASS', 'backend': backend,
+                'params': sum(p.numel() for p in model.parameters()), 'zero_scored_rank': True,
+                'masked_ce_reference': float(expected.detach()), 'masked_ce_distributed': actual_loss,
+                'parameter_gradients': metrics}, indent=2) + '\n')
+    finally:
+        d.close()
+
+
+def resume_check(root, backend):
+    root = Path(root)
+    script = Path(__file__).with_name('train_diffusion.py')
+    base = [sys.executable, '-m', 'torch.distributed.run', '--standalone', '--nproc-per-node=2',
+            str(script), '--bundle', str(root / 'src/probe-bundle'), '--profile', 'd1',
+            '--gdn-backend', backend, '--device', 'cuda', '--amp', '--amp-init-scale', '8',
+            '--world-size', '2', '--batch-size', '2', '--grad-accum', '1', '--steps', '6',
+            '--warmup', '2', '--lr', '0.0001', '--seed', '1001', '--checkpoint-every', '3',
+            '--eval-every', '3', '--eval-batches', '1', '--fused-optimizer']
+    reports = []
+    started = time.monotonic()
+    for name, resume, kill in [('full', None, False), ('interrupted', None, True),
+                               ('restarted', root/'interrupted/checkpoint-000003.pt', False)]:
+        argv = base + ['--out', str(root/name)]
+        if resume:
+            argv += ['--resume', str(resume)]
+        p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, start_new_session=True)
+        lines = []
+        try:
+            assert p.stdout is not None
+            for line in p.stdout:
+                lines.append(line)
+                if kill and line.startswith('{') and json.loads(line).get('step') == 4:
+                    os.killpg(p.pid, signal.SIGKILL)
+                    break
+            rest, _ = p.communicate(timeout=30)
+            lines.append(rest)
+        finally:
+            if p.poll() is None:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.wait()
+            (root/f'{name}.log').write_text(''.join(lines))
+        assert p.returncode == (-9 if kill else 0), (name, p.returncode, ''.join(lines)[-3000:])
+        rows = [row for line in lines if line.startswith('{') and 'masked_ce' in (row := json.loads(line))]
+        assert all(not row['optimizer_step_skipped'] for row in rows)
+        reports.append(rows)
+    left = load_checkpoint(root/'full/checkpoint-000006.pt')
+    right = load_checkpoint(root/'restarted/checkpoint-000006.pt')
+    for key in ('step','tokens_seen','tokens_processed','tokens_scored','scaler','scheduler','loader'):
+        assert left[key] == right[key], key
+    assert left['scheduler']['last_epoch'] == 6
+    assert torch.equal(left['corruption_rng'], right['corruption_rng'])
+    for a, b in zip(left['distributed']['ranks'], right['distributed']['ranks']):
+        assert all(torch.equal(a[k], b[k]) for k in ('cpu', 'cuda'))
+    loss_error = max(abs(a['masked_ce'] - b['masked_ce'])
+                     for a, b in zip(reports[0][3:], reports[2]))
+    assert len(reports[2]) == 3 and loss_error < 0.003
+    weights = {name: comparison(x, right['model'][name], 0.003, 1e-5, name)
+               for name, x in left['model'].items()}
+    optimizer_max = 0.0
+    for index, state in left['optimizer']['state'].items():
+        for key, value in state.items():
+            metric = comparison(value, right['optimizer']['state'][index][key], 0.003, 1e-5,
+                                f'optimizer {index} {key}')
+            optimizer_max = max(optimizer_max, metric['max_abs'])
+    result = {'status': 'PASS', 'backend': backend, 'world_size': 2, 'params': sum(v.numel() for v in left['model'].values()),
+              'steps': 6, 'kill_after': 4, 'resume_from': 3, 'successful_updates': 6,
+              'loader_scheduler_scaler_rng_equal': True, 'sampled_eval_on_rank0': True,
+              'loss_max_abs_error': loss_error, 'weight_metrics': weights,
+              'optimizer_max_abs_error': optimizer_max, 'wall_seconds': time.monotonic()-started,
+              'checkpoint_sha256': {name: hashlib.sha256((root/name/'checkpoint-000006.pt').read_bytes()).hexdigest()
+                                    for name in ('full','restarted')}}
+    del left, right
+    gc.collect()
+    return result
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--phase', choices=('gradients', 'resume'), required=True)
+    p.add_argument('--root', type=Path, required=True)
+    p.add_argument('--backend', choices=('chunk', 'chunk-tc'), default='chunk')
+    p.add_argument('--out', type=Path, required=True)
+    a = p.parse_args()
+    if a.phase == 'gradients':
+        gradient_check(a.out, a.backend)
+    else:
+        a.out.write_text(json.dumps(resume_check(a.root, a.backend), indent=2) + '\n')
+
+
+if __name__ == '__main__':
+    main()

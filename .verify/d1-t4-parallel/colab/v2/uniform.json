@@ -1,0 +1,243 @@
+{
+  "status": "PASS",
+  "gpu": "Tesla T4",
+  "devices": 1,
+  "torch": "2.14.1+cu130",
+  "cuda": "13.0",
+  "params": 109137632,
+  "context": 1024,
+  "global_batch": 64,
+  "global_micro": 8,
+  "per_gpu_micro": 8,
+  "backend": "chunk-tc",
+  "fused_optimizer": true,
+  "mode": "uniform",
+  "precision": "fp16 autocast; fp32 state/solve/optimizer",
+  "validation_included": false,
+  "checkpoint_included": false,
+  "provenance": {
+    "manifest_sha256": "85c0cbcfd4e161742439c11b803a0054bbde91528a09bb1582ac64e90dd51dd6",
+    "fingerprint": "ec6f6545c91ae536ed75e631f5d53f699703279477f913a753c53df51a1d8508",
+    "tokenizer_manifest_sha256": "5686f355f4332a73a8caa67910d4c52d798a7f361df1f35450ea0f4ed3b241b0",
+    "tokenizer_sha256": "5bb6b95687e59ae2c8a52c7ec8e664574aaffae8875f567a7335d9d666e3de0b",
+    "seq_len": 1024,
+    "shards": [
+      {
+        "split": "train",
+        "path": "train.bin",
+        "sha256": "3e2b6e538ff0ea10c3d309bd9bd89885237198708f9ab49abd4f838d6aa4ce84",
+        "tokens": 131072
+      },
+      {
+        "split": "validation",
+        "path": "validation.bin",
+        "sha256": "98731bb009f6433bc2bab4555b96cd57493ca10e35e5f5ca196c0ec7e48c7b66",
+        "tokens": 32768
+      }
+    ]
+  },
+  "source_sha256": {
+    "prepare_corpus.py": "e064595d0c47ebef450b45d22ab2f653f9b347d2d77965f757b605f5bbe6226b",
+    "data_prep_yours.py": "43f9afc99516a955581b72731da7e62d030a2ecfbed92249c875e7039871e896",
+    "evaluate_d1_checkpoint.py": "5db0d592ff264f94d2abacb4bfef30302bf15ec47a1676155ff5925fa1f7cea2",
+    "build_probe_bundle.py": "6fa740469202249107f639fcc84338ccd6e7d294d543ba19aa4400af85ce7076",
+    "build_training_mix.py": "c199dd08b3d6a43c8a0bdbd3ddd1ace8774bb48fcc9489c8db7ecfd92fe48130",
+    "data_prep.py": "57d35b3b2b970bcfe5b297b43a1427b09f7b899c80bdb9b27d43965f66c42f4c",
+    "check_d1_p0.py": "910330a03f9abd4921c0c6d07424bf9c2905cbb173aa4e75a53284ce07651f96",
+    "train_diffusion.py": "75858c8b78657954df47067f90ac098e11e8abbc163a93e08849217f33dd78e5",
+    "benchmark_d1_parallel.py": "20072e72624dba8a3f62b4d94ed5bda17566ce52d25f1bfd1e2ba9ff556f8c3f",
+    "check_d1_parallel.py": "7ea16802ab796a6541dbe000cdb58d05d3ab3ebcf431953dcad562471e6433ff",
+    "d1_model.py": "e918d2b68a684f4de172826eb71c9d030d4e0ea985a6d2c3b9a25cbf77b00110",
+    "audit_training_data.py": "df5020b5cb3083d4a1cb655a4723afeefa61017b07f9d4c92a08f66677f813fa",
+    "validate_d1.py": "4b14f94f37738f02b8fdd2b7fe368a1d7527c2cbe605bacc723a2667a0f03540",
+    "distributed_training.py": "1e41c0a6da94d3c1d978cd1430a67806b9e16bb32b646695f797b12766ddb3bc",
+    "near_dedup.py": "4d07fe7d99cd2797df12ecab585c25adc970ec45f19ebbe10b7326f035973111",
+    "check_gdn_t4.py": "a0c40d416eae7dd48ab6e247548b7b22d1ed6ef232d64e3a8298826b3e68d3e7",
+    "profile_smoldlm_cache.py": "5ee916fbd4b38b27a278c16521543754102b83c0c107b8ddc20dc4163ead7c53",
+    "export_benchmarks.py": "79619bc112d61a47ed7ef6ff6abddf9ce544db84845c81ba3506ecd64897b0b9",
+    "fetch_training_sources.py": "c67a02ee206a3ce45baeacb96f0338c2f0b1f18e921a675cf36b98eab46a7c5a",
+    "train_tokenizer.py": "3db40c6d793129f0987eb78f0d7f521b991a74e6b545502571dda3d8192f0b19"
+  },
+  "windows": [
+    {
+      "window": 0,
+      "seconds": 16.02046222199988,
+      "gpu_seconds": 16.02046222199988,
+      "consumed": 262144,
+      "processed": 137472,
+      "scored": 4161,
+      "skipped": 0,
+      "updates": [
+        {
+          "consumed": 65536,
+          "processed": 36096,
+          "scored": 1077,
+          "skipped": 0,
+          "masked_ce": 9.42687296889508,
+          "grad_norm": 1.930472731590271
+        },
+        {
+          "consumed": 65536,
+          "processed": 34560,
+          "scored": 977,
+          "skipped": 0,
+          "masked_ce": 9.162383252302968,
+          "grad_norm": 2.058114528656006
+        },
+        {
+          "consumed": 65536,
+          "processed": 37888,
+          "scored": 1043,
+          "skipped": 0,
+          "masked_ce": 9.1192286373442,
+          "grad_norm": 1.7277259826660156
+        },
+        {
+          "consumed": 65536,
+          "processed": 28928,
+          "scored": 1064,
+          "skipped": 0,
+          "masked_ce": 8.840566993656015,
+          "grad_norm": 1.9686566591262817
+        }
+      ],
+      "peak_allocated_per_rank": 12668346880,
+      "peak_reserved_per_rank": 13899923456,
+      "consumed_tokens_per_second": 16363.073447407427,
+      "processed_tokens_per_second": 8581.025821540808,
+      "scored_tokens_per_second": 259.73033376564905
+    },
+    {
+      "window": 1,
+      "seconds": 16.246225359999926,
+      "gpu_seconds": 16.246225359999926,
+      "consumed": 262144,
+      "processed": 136960,
+      "scored": 4107,
+      "skipped": 0,
+      "updates": [
+        {
+          "consumed": 65536,
+          "processed": 33024,
+          "scored": 1069,
+          "skipped": 0,
+          "masked_ce": 8.817144381431245,
+          "grad_norm": 1.650636911392212
+        },
+        {
+          "consumed": 65536,
+          "processed": 27392,
+          "scored": 1012,
+          "skipped": 0,
+          "masked_ce": 8.531960227272727,
+          "grad_norm": 1.8286415338516235
+        },
+        {
+          "consumed": 65536,
+          "processed": 28416,
+          "scored": 969,
+          "skipped": 0,
+          "masked_ce": 8.483838848039216,
+          "grad_norm": 1.53643798828125
+        },
+        {
+          "consumed": 65536,
+          "processed": 48128,
+          "scored": 1057,
+          "skipped": 0,
+          "masked_ce": 8.16553334910123,
+          "grad_norm": 1.7602107524871826
+        }
+      ],
+      "peak_allocated_per_rank": 12497674752,
+      "peak_reserved_per_rank": 13899923456,
+      "consumed_tokens_per_second": 16135.686548176825,
+      "processed_tokens_per_second": 8430.265921166603,
+      "scored_tokens_per_second": 252.79718266816033
+    },
+    {
+      "window": 2,
+      "seconds": 18.4570825159999,
+      "gpu_seconds": 18.4570825159999,
+      "consumed": 262144,
+      "processed": 158976,
+      "scored": 4114,
+      "skipped": 0,
+      "updates": [
+        {
+          "consumed": 65536,
+          "processed": 36608,
+          "scored": 972,
+          "skipped": 0,
+          "masked_ce": 8.187270929783951,
+          "grad_norm": 1.445298194885254
+        },
+        {
+          "consumed": 65536,
+          "processed": 39424,
+          "scored": 995,
+          "skipped": 0,
+          "masked_ce": 8.091204067211056,
+          "grad_norm": 1.326268196105957
+        },
+        {
+          "consumed": 65536,
+          "processed": 43008,
+          "scored": 1101,
+          "skipped": 0,
+          "masked_ce": 8.03539396003633,
+          "grad_norm": 1.1981137990951538
+        },
+        {
+          "consumed": 65536,
+          "processed": 39936,
+          "scored": 1046,
+          "skipped": 0,
+          "masked_ce": 7.787863736854685,
+          "grad_norm": 1.3544046878814697
+        }
+      ],
+      "peak_allocated_per_rank": 12850561536,
+      "peak_reserved_per_rank": 13983809536,
+      "consumed_tokens_per_second": 14202.894730126232,
+      "processed_tokens_per_second": 8613.278933016007,
+      "scored_tokens_per_second": 222.89546554465988
+    }
+  ],
+  "warmup": [
+    {
+      "consumed": 65536,
+      "processed": 28928,
+      "scored": 976,
+      "skipped": 0,
+      "masked_ce": 10.49040247182377,
+      "grad_norm": 26.104145050048828
+    },
+    {
+      "consumed": 65536,
+      "processed": 38144,
+      "scored": 1048,
+      "skipped": 0,
+      "masked_ce": 10.194753399332061,
+      "grad_norm": 14.806812286376953
+    },
+    {
+      "consumed": 65536,
+      "processed": 32768,
+      "scored": 1119,
+      "skipped": 0,
+      "masked_ce": 9.715817694369973,
+      "grad_norm": 2.721864938735962
+    },
+    {
+      "consumed": 65536,
+      "processed": 34816,
+      "scored": 1005,
+      "skipped": 0,
+      "masked_ce": 9.41572605721393,
+      "grad_norm": 2.616586446762085
+    }
+  ],
+  "wall_seconds": 68.10504277899986,
+  "final_scale": 8.0
+}
