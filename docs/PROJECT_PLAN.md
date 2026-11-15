@@ -28,12 +28,12 @@ Keep these quantities separate:
   The old recipe's approximately 100M-token pilot is a separate smoke-run
   proposal based on that bundle, not a token target implied by the model name
   or a user-approved general-base training volume.
-- **Compute:** the current ceiling is six GPU-hours. Run length depends on data,
-  objective, measured throughput and evaluation overhead. A parameter count
-  alone does not determine training time or establish that a model is trained
-  well enough. The 1.84-to-1.89-hour projection applies only to the existing
-  D1 recipe consuming 99,942,400 corpus tokens, not to training every proposed
-  100M-parameter base, specialist, or the eventual 2B system.
+- **Compute:** use the renewable **30 Kaggle GPU-session hours per week**
+  available to this account. One hour of a T4×2 runtime uses about one hour of
+  that allowance. Query the provider's actual remaining quota before a run.
+  The earlier six-hour cumulative project cap and 2.52-hour balance were an
+  incorrect planning interpretation and are withdrawn. Model size alone does
+  not determine training time; the token budget and objective remain separate.
 
 Do not use bare `100M` for a data or training budget. State parameters, unique
 corpus tokens, consumed tokens, processed tokens and scored tokens explicitly.
@@ -103,76 +103,111 @@ Use matched protocols, report uncertainty, inspect failures and protect a final
 holdout from development and distillation. Record regression results for general
 behavior whenever specializing, upcycling or applying RL.
 
-## Infrastructure status and six-hour boundary
+## Infrastructure status and weekly Kaggle budget
 
-The [D1 implementation](D1_ARCHITECTURE.md) and
-[T4 evidence](../.verify/d1-t4-speed/README.md) establish:
-
-- Native PyTorch GDN version 2 runs on a real T4. Output, gradient, cached-state
-  and AMP process-resume checks passed within their recorded tolerances.
-- A 200-attempt P0 on the original training-v1 corpus cleared the 6,000
-  processed-token/s stop gate in all three 50-update timing windows. All 150
-  timed updates applied; five overflows were safely skipped during warmup.
-- Cached full-frontier validation covered all 960 contexts and 32 frontiers in
-  353.09 seconds, 365.42 seconds including checkpoint loading and process work.
-- The measured configuration is context 1024, global batch 64, micro-batch 8,
-  accumulation 8 and FP16 autocast with FP32 state/solve. Warmup calibrated the
-  loss scale from 256 to 8; fresh scale-8 parity and resume checks passed.
-
-These are infrastructure results for the current 109.1M-parameter D1. They do
-not demonstrate coherent conversation, tool use, branch qualification, useful
-MoE integration, inference speed, or completion of a general-base pretrain.
-The Python-heavy corpus remains a frozen infrastructure fixture.
-
-Additional bounded optimization work is recorded in the
-[new T4 evidence](../.verify/d1-t4-parallel/README.md) and
-[current allocation ledger](../.verify/d1-t4-parallel/six-hour-budget.json).
-The historical ledger's 1.7894 GPU-hours is included there. Its unspent 4.15-hour
-reservation is withdrawn: subsequent R&D must also fit within the same six-hour
-ceiling. Use the new ledger's remaining balance rather than adding a new
-six-hour allowance. Provider billing and quota units are separate from physical
-GPU-hours; startup uncertainty is reserved explicitly.
-
-The available two-GPU arrangement is **one Kaggle runtime with two T4s**.
-Both allocated devices count throughout that runtime, including CPU reference
-checks, one-rank controls, validation and checkpoint work. Six physical GPU-hours
-therefore permit three runtime hours with two T4s before subtracting prior work.
-A six-hour two-T4 runtime is twelve physical GPU-hours. No P1 run has been launched.
-The final v3 two-T4 qualification request is still queued, with no GPU
-reservation or published output after 46.1 minutes as of
-2026-11-15T16:40:00.248166+00:00. Its 20-minute runtime cap is reserved in the ledger;
-**2.52 physical GPU-hours** remain on that conservative planning basis.
-Do not claim measured two-T4 throughput or resume parity for v3 until its
-reports pass. Single-T4 output, gradient, full-context cache and resume checks
-have passed; earlier two-T4 gradient tests used a different candidate.
-
+The [native T4 evidence](../.verify/d1-t4-speed/README.md) records CPU/T4
+output, gradient, cache and AMP resume parity, a 200-attempt P0 whose three
+50-update windows cleared 6,000 processed tokens/s, and cached validation over
+all 960 contexts and 32 frontiers in 353.09 seconds. All 150 timed updates
+applied; five overflows were skipped during warmup. Those timings belong to
+native chunk version 2 and are not a v3 or two-GPU measurement.
 
 The optional `chunk-tc` v3 backend, fused AdamW and single-node DDP preserve the
-109.1M-parameter model and context 1024. FP32 residuals/norms were retained after
-an FP16 candidate failed cached/full parity on Kaggle; the tolerance was not
-loosened. The final single-T4 bounded probe measured 8,436 processed input tokens/s
-and 15,308 consumed corpus tokens/s. Those are different from its approximately
-241 scored tokens/s. See [execution details](T4_PARALLEL.md) and the evidence for
-paired two-T4 results, memory, resume checks and conservative budget arithmetic.
+109,137,632-parameter model, context 1024 and global batch 64. FP32 residuals
+and normalization were retained after an FP16 candidate failed cached/full
+parity on Kaggle; the tolerance was not loosened. The
+[final single-T4 probe](../.verify/d1-t4-parallel/colab-final/uniform.json)
+measured **8,436 processed input tokens/s**, **15,308 consumed corpus tokens/s**
+and approximately **241 scored tokens/s**. Single-T4 output, gradient,
+1024-token cache and process-resume checks passed. These are infrastructure
+results, not evidence of coherent conversation, tool use or a trained base.
 
-At the measured single-T4 rate, consuming one billion corpus tokens projects to
-about 18.1 runtime hours before evaluation/checkpoint overhead. This is a
-projection of this frontier objective, not a sufficient pretraining budget or
-autoregressive loss-token equivalent. A model's parameter count alone cannot
-establish a six-hour complete pretrain. Do not reduce model size or silently
-substitute a 100M-token target to make the budget appear to fit.
+As of 2026-11-15T17:12:00.712435+00:00, the final two-T4 qualification
+request is still **QUEUED**, with no provider GPU reservation and no published
+outputs. Earlier two-T4 gradient checks used another candidate. Final v3
+**two-T4 throughput and resume parity remain unmeasured**. See the
+[measurement record](../.verify/d1-t4-parallel/README.md) and
+[execution guide](T4_PARALLEL.md). No long pretraining or P1 run has been launched.
 
-These allocations do not cover three specialists, router training, upcycling,
-code RL, or a roughly 2B-parameter system. External quality-evaluation and upload
-costs remain unmeasured and must stop at their caps if exhausted. New backend,
-batch and world-size configurations require P0 and quality requalification.
+### Weekly quota policy
 
-The [T4 pilot recipe](TRAINING_RECIPE_T4_PILOT.md) remains a conditional
-infrastructure recipe. Its token-volume assumptions and allocations must be
-revisited against the broad-base data plan before adopting it for this prototype.
-Do not relabel one pass over training-v1 as completion of the general base.
-The older multi-billion-token pretrain and matched looping twins are outside the
-current six-hour plan.
+Use one Kaggle runtime with two T4s and the
+[current weekly ledger](../.verify/d1-t4-parallel/weekly-budget.json):
+
+- **30 runtime hours per week**, refreshed weekly. Both T4s can be used during
+  those hours; do not divide the allowance by two. A six-hour T4×2 run consumes
+  about six hours of Kaggle quota. Physical device-hours may be logged for
+  compute analysis, but they are not the quota planning unit.
+- Charge this week's experiments, GPU-enabled idle/CPU work, validation,
+  checkpoints, uploads and failed sessions to this week's allowance. Previous
+  weeks' usage does not reduce the fresh allowance. Colab usage is separate.
+- The API snapshot reports 0.05258 hours used and
+  0.00 provider-reserved hours, leaving **29.95 hours**.
+  Reserving the already queued test's 20-minute cap once leaves **29.61
+  hours** for other work in this snapshot. Replace a local reservation with the
+  provider reservation when allocated; never subtract both for the same job.
+- The API reports the next reset at **2026-11-21T00:00:00 UTC**. Read the
+  actual quota again on every runtime start and after a reset. A queued job
+  that starts in another quota window belongs to that window.
+- The old [six-hour ledger](../.verify/d1-t4-parallel/six-hour-budget.json),
+  its 2.52-hour balance, and the inherited 4.15-hour future-stage reservation
+  are historical, superseded planning assumptions. They are not additional
+  deductions or a lifetime project ceiling. Six hours may be chosen as an
+  experiment duration later; it is not an active cumulative quota cap.
+
+Kaggle documents the [weekly allowance](https://www.kaggle.com/docs/efficient-gpu-usage)
+and [12-hour CPU/GPU session limit](https://www.kaggle.com/docs/notebooks).
+Plan resumable sessions below that limit and export verified checkpoints before
+termination. Preserve model/optimizer/scheduler/scaler state, both ranks' RNG,
+corruption RNG, loader cursor and token counters across sessions and weeks.
+Pin source, backend, environment, data and tokenizer: a runtime reset must not
+silently change the resume configuration. Checkpoint retention/upload and final
+two-T4 resume qualification remain prerequisites for a long run.
+
+### Provisional pretraining duration on two T4s
+
+The token target for the general base is **not selected**. The following are
+illustrative consumption budgets for the fixed 109.1M-parameter D1, not a
+100M-token substitute for a 100M-parameter model, or a quality guarantee.
+
+The measured single-T4 consumption rate is 15307.63 corpus tokens/s. For an
+assumed aggregate two-T4 speedup `s`, estimate:
+
+`runtime hours = consumed corpus tokens / 15307.63 / s / 3600 × 1.30`
+
+The extra 30% is an **unmeasured planning allowance** for evaluation,
+checkpointing, restarts and setup. It is already included in the table and must
+fit inside the weekly allowance, not be added above it. Queue delays and waits
+for a quota reset add calendar time and are not included here.
+
+| Consumed corpus tokens | Provisional 1.5× scaling | Ideal 2× scaling | No scaling gain |
+| --- | ---: | ---: | ---: |
+| 1B | 15.7 h | 11.8 h | 23.6 h |
+| 2B | 31.5 h | 23.6 h | 47.2 h |
+| 3B | 47.2 h | 35.4 h | 70.8 h |
+
+All two-GPU columns are **estimates, not benchmarks or guaranteed bounds**.
+The 1.5× case is a working assumption relative to the measured Colab single-T4
+rate; software differences and communication may make it optimistic. Replace it
+with the matched-work Kaggle measurement before choosing a production budget.
+The exact inputs and calculations are in
+[pretraining-time-scenarios.json](../.verify/d1-t4-parallel/pretraining-time-scenarios.json).
+
+For example, 2B consumed tokens projects to roughly 31.5 runtime hours in the
+working case, just over a fresh weekly allowance; ideal scaling would put it
+near 23.6 hours. A 3B consumption budget projects to 47.2 hours in the working
+case, requiring a quota refresh. These are execution hours, not guaranteed
+calendar completion dates or proof of sufficient pretraining. Consumed frontier-
+objective corpus tokens are not autoregressive loss-token equivalents; repeated
+passes do not create additional unique data.
+
+The Python-heavy training-v1 corpus and inherited approximately 100M-token pilot
+remain conditional infrastructure artifacts. Choose broad-base sources,
+tokenizer, unique-data volume, consumption target and behavioral gates before
+training a base. New backend, batch and world-size configurations require their
+own P0 and quality requalification. Specialists, upcycling and the eventual
+roughly 2B-total-parameter system need separately measured budgets; they are not
+automatically covered by one base-pretrain estimate.
 
 ## Next work, in order
 
@@ -188,9 +223,11 @@ current six-hour plan.
 4. Select the measured T4 configuration and freeze its micro-batch/frontier
    grouping. A global micro-batch of 8 on two GPUs preserves the single-GPU
    grouping; 16 changes the number of frontier draws per update and needs
-   requalification. Implement cumulative GPU-time accounting and checkpoint retention/upload.
-   Persist spent time across restarts; include validation, transfers and failed
-   work. Refuse another stage if the remaining balance cannot cover it.
+   requalification. Implement weekly Kaggle runtime accounting and checkpoint
+   retention/upload. Persist run progress across restarts, but debit quota to
+   the provider's current weekly window. Include validation, transfers and
+   failed work; refresh the allowance after the provider reset. Refuse a stage
+   if this week's remaining quota cannot cover its allocated session chunk.
    `--p1` remains blocked until these controls and the evaluation protocol are
    ready. Do not launch training solely because the speed gate passed.
 5. Train one bounded base candidate and inspect the feasibility results. Only
@@ -206,5 +243,6 @@ Base architecture and size; whether the current D1 is an appropriate seed;
 broad-base sources, licenses, mixture, tokenizer and token volume; feasibility
 thresholds and larger reference model; specialist recipes and budgets; MoE layout,
 router and integration training; generation settings and final evaluation splits.
-The six-hour current ceiling and the agreed general-purpose goal are constraints,
-not open invitations to assume a Python-only model or unlimited compute.
+The renewable 30-hour Kaggle weekly allowance and the agreed general-purpose
+goal are constraints, not permission to assume a Python-only model, sufficient
+pretraining data, or unrestricted runtime availability.

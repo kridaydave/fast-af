@@ -1,5 +1,10 @@
 # T4 optimization and two-rank D1 evidence
 
+**Budget policy correction:** use [weekly-budget.json](weekly-budget.json) and
+[the project plan](../../docs/PROJECT_PLAN.md): 30 Kaggle runtime hours per week
+for the T4 pair. The former six-hour cumulative cap and 2.52-hour balance are
+superseded assumptions. The measurements below are unchanged.
+
 2026-11-15. Base commit: `c4bf81e9328e8b09ed278046a430e6dba3d72674`.
 `origin/master` remains `cde26573920c7ae5bd6aab06617952ba282bbde9`.
 The pipeline/recipe integration and earlier native-chunk measurements are
@@ -125,12 +130,13 @@ multi-node/elastic training are unvalidated. New configurations still require
 P0 and quality requalification. The original 353-second full validation is a
 historical native-backend measurement, not a v3 timing claim.
 
-Raw `gpu_seconds` counts participating ranks. Allocation accounting charges
-both T4s for the entire Kaggle notebook, including one-rank controls, CPU
-reference work, checkpoint work and failed tests. Provider quota has separate
-units. Six physical GPU-hours are three runtime hours with both T4s, before
-subtracting previous work. `--p1` remains blocked pending the budget controller,
-checkpoint retention/upload and frozen evaluation protocol.
+Raw `gpu_seconds` counts participating ranks for compute analysis. It is not
+the provider's weekly quota unit. A T4×2 session uses one quota hour per elapsed
+runtime hour, including one-rank controls and CPU/checkpoint work while the
+session is active. Track the provider's current weekly allowance in
+`weekly-budget.json`. Colab consumption is separate. `--p1` remains blocked
+pending week-aware runtime enforcement, checkpoint retention/upload and the
+frozen evaluation protocol.
 
 ## Final two-T4 allocation blocker
 
@@ -156,10 +162,17 @@ The alternative is to run the packaged script in an already allocated
 interactive two-T4 Kaggle notebook. Stop that interactive runtime afterward;
 script limits bound work, not the lifetime of a manually started notebook.
 
-The current ledger conservatively accounts 2.6604
-GPU-hours of prior work, reserves 0.6667
-for this queued job's full cap and 0.15 for unmetered startup/teardown uncertainty.
-That leaves **2.5229 physical GPU-hours** for future
-work within six. The old unspent 4.15-hour reservation is withdrawn. Event and
-provider-counter accounting are not a provider billing audit. No P1 run or
-multi-billion-token pretraining budget has been approved.
+The old `six-hour-budget.json` is marked **superseded**. Its event durations
+remain historical evidence, but its six-hour project ceiling and 2.5229-hour
+balance are invalid for current quota planning. Do not subtract prior weeks'
+usage or Colab time from the fresh Kaggle allowance, or multiply session time
+by two for quota accounting.
+
+The API was rechecked at 2026-11-15T17:12:00.712435+00:00: the final run
+remains QUEUED with no outputs and zero provider reservation. The current
+weekly snapshot reports 30 hours allowed and
+0.05258 hours used. See `weekly-budget.json` for the
+provider balance and the separate 20-minute local reservation for the queued
+test. The pretraining scenarios in `pretraining-time-scenarios.json` are derived
+from the single-T4 consumption rate with explicitly unmeasured two-GPU scaling
+and overhead assumptions. No long pretraining run is authorized by this correction.

@@ -41,5 +41,9 @@
   "final_published_output_files": 0,
   "past_accounted_gpu_hours": 2.660437777777778,
   "pending_job_reservation_gpu_hours": 0.6666666666666666,
-  "remaining_planning_gpu_hours": 2.5228955555555554
+  "remaining_planning_gpu_hours": 2.5228955555555554,
+  "status": "SUPERSEDED_BUDGET_ASSUMPTION",
+  "superseded_by": "weekly-budget.json",
+  "do_not_use_for_current_quota": true,
+  "correction": "The cumulative six-physical-GPU-hour cap was an agent interpretation, not Kaggle quota policy. Its remaining-balance fields are historical and invalid for current planning. Event durations are retained as evidence."
 }

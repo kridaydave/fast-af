@@ -124,16 +124,21 @@ autoregressive loss tokens or a claim of sufficient pretraining.
 Timing windows exclude evaluation and checkpoint writes. The small real-token
 subset is revisited and cached locally. A short probe does not replace the
 200-attempt P0, long-run AMP stability, full-corpus validation or quality tests.
-The six-hour budget must include runtime allocation, CPU checks while GPUs are
-held, transfers, failures, evaluation and checkpoint work.
+Kaggle planning uses the [renewable weekly budget](../.verify/d1-t4-parallel/weekly-budget.json):
+**30 GPU-enabled session hours per week** for this account, with both T4s
+available during those hours. Count active runtime, including GPU-enabled idle
+or CPU work, transfers, failures, evaluation and checkpoints, once against that
+week's allowance. A six-hour T4×2 run consumes about six quota hours. Do not
+halve the 30-hour allowance because two GPUs are present, debit Colab time to
+Kaggle, or carry previous weeks' usage into a fresh weekly allowance.
 
-Raw benchmark `gpu_seconds` counts participating ranks. A Kaggle runtime holds
-**both** T4s even during its one-rank controls, so allocation accounting charges
-two GPU-seconds per wall second throughout that notebook. Provider quota is a
-separate counter. Six physical GPU-hours permit three runtime hours on two
-T4s, before subtracting earlier work. A six-hour two-T4 runtime is 12 physical
-GPU-hours.
+Raw benchmark `gpu_seconds` counts participating devices for compute analysis;
+it is a different metric and must not be used as Kaggle quota consumption.
+The old cumulative six-hour limit and 2.52-hour balance are withdrawn. Re-read
+provider quota at each start and reset, reserve pending work once, and persist
+training state through resumable sessions below the documented 12-hour limit.
+See [PROJECT_PLAN.md](PROJECT_PLAN.md) for the time scenarios and their assumptions.
 
-`--p1` remains blocked pending cumulative budget enforcement, checkpoint
+`--p1` remains blocked pending weekly runtime enforcement, checkpoint
 retention/upload and the frozen evaluation protocol. No long pretraining run
 is authorized or launched by these tools.

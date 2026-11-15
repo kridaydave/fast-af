@@ -1,0 +1,76 @@
+{
+  "status": "UNMEASURED_TWO_GPU_PLANNING_SCENARIOS",
+  "model_parameters": 109137632,
+  "context": 1024,
+  "global_batch": 64,
+  "measured_single_t4_consumed_tokens_per_second": 15307.6263329921,
+  "measured_source": "colab-final/uniform.json",
+  "measured_source_sha256": "7213f048d081b46d0de2928a91bee0656e6558656ca86f0ad57351b0332f3d40",
+  "formula": "hours = consumed_corpus_tokens / measured_single_t4_consumed_tokens_per_second / assumed_effective_speedup / 3600 * 1.30",
+  "overhead_allowance_fraction_of_training_time": 0.3,
+  "overhead_is_measured": false,
+  "calendar_queue_and_reset_wait_included": false,
+  "token_budget_selected": false,
+  "scenarios": [
+    {
+      "consumed_corpus_tokens": 1000000000,
+      "no_scaling_gain": {
+        "effective_speedup_assumption": 1.0,
+        "training_hours": 18.146365199618902,
+        "total_runtime_hours_with_30pct_allowance": 23.590274759504574
+      },
+      "provisional_1_5x": {
+        "effective_speedup_assumption": 1.5,
+        "training_hours": 12.097576799745935,
+        "total_runtime_hours_with_30pct_allowance": 15.726849839669717
+      },
+      "ideal_2x": {
+        "effective_speedup_assumption": 2.0,
+        "training_hours": 9.073182599809451,
+        "total_runtime_hours_with_30pct_allowance": 11.795137379752287
+      }
+    },
+    {
+      "consumed_corpus_tokens": 2000000000,
+      "no_scaling_gain": {
+        "effective_speedup_assumption": 1.0,
+        "training_hours": 36.292730399237804,
+        "total_runtime_hours_with_30pct_allowance": 47.18054951900915
+      },
+      "provisional_1_5x": {
+        "effective_speedup_assumption": 1.5,
+        "training_hours": 24.19515359949187,
+        "total_runtime_hours_with_30pct_allowance": 31.453699679339433
+      },
+      "ideal_2x": {
+        "effective_speedup_assumption": 2.0,
+        "training_hours": 18.146365199618902,
+        "total_runtime_hours_with_30pct_allowance": 23.590274759504574
+      }
+    },
+    {
+      "consumed_corpus_tokens": 3000000000,
+      "no_scaling_gain": {
+        "effective_speedup_assumption": 1.0,
+        "training_hours": 54.43909559885671,
+        "total_runtime_hours_with_30pct_allowance": 70.77082427851373
+      },
+      "provisional_1_5x": {
+        "effective_speedup_assumption": 1.5,
+        "training_hours": 36.292730399237804,
+        "total_runtime_hours_with_30pct_allowance": 47.18054951900915
+      },
+      "ideal_2x": {
+        "effective_speedup_assumption": 2.0,
+        "training_hours": 27.219547799428355,
+        "total_runtime_hours_with_30pct_allowance": 35.385412139256864
+      }
+    }
+  ],
+  "limitations": [
+    "Final two-T4 throughput and resume qualification remain pending.",
+    "1.5x is a provisional planning assumption; 2x is ideal linear scaling, not a measured bound.",
+    "Consumed frontier-objective corpus tokens are not autoregressive loss-token equivalents.",
+    "No token volume here establishes sufficient pretraining or authorizes a run."
+  ]
+}

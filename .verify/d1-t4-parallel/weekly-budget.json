@@ -1,0 +1,36 @@
+{
+  "status": "CURRENT_BUDGET_POLICY",
+  "unit": "Kaggle GPU-enabled session wall-clock hours",
+  "hardware": "one Kaggle runtime with two T4s",
+  "weekly_allowance_hours": 30.0,
+  "refresh_policy": "renewable weekly; re-read provider quota at each runtime start",
+  "pair_hour_quota_debit": 1,
+  "multiply_quota_debit_by_device_count": false,
+  "prior_week_usage_carries_into_new_week": false,
+  "colab_usage_debits_kaggle_quota": false,
+  "six_hour_cumulative_project_cap_active": false,
+  "old_2_52_hour_balance_valid": false,
+  "snapshot": {
+    "checked_utc": "2026-11-15T17:12:00.712435+00:00",
+    "status": "QUEUED",
+    "failure_message": "",
+    "allowed_weekly_hours": 30.0,
+    "used_this_week_hours": 0.05258,
+    "provider_reserved_hours": 0.0,
+    "next_reset_utc": "2026-11-21T00:00:00",
+    "notebook_ref": "kridaydave/d1-two-t4-validated-20261115-1552/1"
+  },
+  "provider_available_hours_at_snapshot": 29.94742,
+  "unallocated_existing_test_cap_hours": 0.3333333333333333,
+  "planning_available_hours_after_local_test_reservation": 29.61408666666667,
+  "reservation_policy": "Use the provider remaining allowance and explicit current-week reservations. Do not count the same job once as a local cap and again as a provider reservation. An unallocated test is conservatively reserved in the present week; query again if it starts after a reset.",
+  "physical_gpu_hour_counters": "diagnostic only; not the Kaggle runtime allowance",
+  "individual_session_limit_hours_documented": 12,
+  "planning_overhead_fraction_of_training_time": 0.3,
+  "overhead_note": "This allowance is already included in pretraining-time-scenarios.json; do not add it a second time or above the weekly quota. It is not a measured cost.",
+  "training_authorized": false,
+  "sources": [
+    "https://www.kaggle.com/docs/efficient-gpu-usage",
+    "https://www.kaggle.com/docs/notebooks"
+  ]
+}

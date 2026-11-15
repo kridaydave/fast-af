@@ -1,5 +1,10 @@
 # T4 optimization evidence
 
+Budget policy update: the historical six-hour cumulative allocation in this
+record is superseded by [the project plan](../../docs/PROJECT_PLAN.md) and
+[weekly Kaggle accounting](../d1-t4-parallel/weekly-budget.json). Measurement
+values and event durations below are unchanged.
+
 This run optimizes the existing 109,137,632-parameter D1. Model width, layer
 layout, context 1024, token masking and global batch 64 are unchanged. No P1 or
 long pretraining run was launched. The target is at least 6,000 processed

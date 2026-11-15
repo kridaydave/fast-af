@@ -1,14 +1,15 @@
 # D1 training recipe and T4 pilot budget
 
-Updated 2026-11-15 with measured T4 infrastructure results; pilot authorization remains gated. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; the native chunk-v2 backend passed the 200-attempt P0 speed gate. The evaluation policy and production wall-time, checkpoint and upload controls still block P1. The P0/P1 budget ceiling is six GPU-hours. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
+Updated 2026-11-15 with measured T4 infrastructure results; pilot authorization remains gated. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; the native chunk-v2 backend passed the 200-attempt P0 speed gate. The evaluation policy and production wall-time, checkpoint and upload controls still block P1. Current quota planning uses 30 Kaggle GPU-session hours per week for the T4 pair, governed by PROJECT_PLAN.md; the former six-hour cumulative cap is superseded. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
 
 The [project plan](PROJECT_PLAN.md) governs the general-purpose base, specialists
 and eventual roughly 2B-total-parameter MoE. **D1's 100M label refers to model
 parameters**; the instantiated model has 109,137,632. This document's separate
 approximately 100M-token pilot is an inherited infrastructure proposal using
 training-v1. It is not the user's model-size requirement or an approved data
-recipe/token budget for the new general base. The six-hour allocation below
-covers that conditional D1 smoke plan, not all specialist and MoE training.
+recipe/token budget for the new general base. The historical six-hour allocation below described that conditional D1 smoke
+plan. It is superseded by the renewable weekly budget; it is not an active
+project or provider quota ceiling.
 
 The newer Tensor Core and two-T4 variants have a separate
 [bounded measurement record](../.verify/d1-t4-parallel/README.md) and
@@ -310,7 +311,13 @@ including checkpoint/config loading. The split scored 491,072 positions. These
 are MEASURED; three full checks project to 18.27 minutes including loads. This cache is for evaluation only; training prefix
 computation and gradients are retained.
 
-### Six-GPU-hour P0/P1 plan
+### Historical six-GPU-hour P0/P1 plan: superseded
+
+The following table preserves the former planning assumption for reference.
+Its six-hour cumulative ceiling and remaining-balance arithmetic are withdrawn.
+Use [PROJECT_PLAN.md](PROJECT_PLAN.md) and
+[weekly-budget.json](../.verify/d1-t4-parallel/weekly-budget.json) for current
+30-hour weekly session-time planning. This does not authorize P1 or waive gates.
 
 A 1,525-attempt P1 consumes 99,942,400 corpus tokens. Applying the three P0
 window rates gives **1.84 to 1.89 GPU-hours for training alone**, DERIVED. Budget
@@ -332,12 +339,13 @@ do not add another blanket 30% on top. The validation cap must use the measured
 cached path. External generation/MBPP and network upload costs remain unmeasured
 for D1. Stop and report incomplete gates if either exhausts its allocation.
 
-The machine-readable ledger in the optimization evidence counts already spent
-Colab allocation, including P0 and the earlier backend sessions, against the
-six-hour ceiling. Future stage allocations must also fit the remaining global
-balance. An execution controller must enforce that balance before P1 is enabled;
-the current `--p1` guard remains closed. This table is not permission to run a
-stage after the six-hour total is exhausted.
+The old ledger's Colab event durations remain evidence, but Colab use does not
+consume Kaggle quota. The provider's weekly runtime counter is authoritative;
+previous weeks' usage does not reduce a fresh allowance. Enforce current-week
+remaining runtime and session chunks before P1 is enabled. The `--p1` guard
+remains closed for operational and evaluation prerequisites, not an imposed
+six-hour lifetime project cap. Do not reuse this historical table as a new
+reservation or deduct it from the weekly budget.
 
 P1 full validation moves to initialization, attempt 763 and attempt 1525. This
 preserves the start/mid/end quality gate while replacing the old 250-step full
@@ -347,7 +355,9 @@ is dropped. Checkpoints remain every 250 attempts plus the final checkpoint.
 P2's matched twins at a 500M arm-A reference remain far beyond six hours: about
 18.4 to 18.9 hours of unlooped-equivalent training alone at these rates, before
 evaluation or contingency. The looped arm is unimplemented and unmeasured.
-Do not start P2 or a 3B pretrain under this budget. No MFU, FLOPS, convergence,
+These historical estimates did not authorize P2 or a 3B pretrain. The weekly
+quota now permits multi-session planning, but P2 still needs implementation,
+measurements and quality gates. No MFU, FLOPS, convergence,
 generation quality or MBPP result is inferred from the speed measurements.
 
 ## 9. Assumptions and open decisions
@@ -359,7 +369,7 @@ Assumptions this recipe makes:
 3. The corpus is reused as built for P1. The audit passed with n-gram and substring checks, but semantic contamination is not ruled out. An additional semantic pass is proposed, not completed.
 4. D1 uses the implemented blockwise frontier objective; classical masking remains a separate smoke profile. Quality is unmeasured; production P0 throughput is measured in section 8.
 5. Section 8 uses three production P0 windows; any kernel, precision or batch change needs a new probe.
-6. Planning uses 30 GPU-hours per week and interruptible sessions; current provider quotas and GPU availability are unverified.
+6. Planning uses the account-verified 30 Kaggle session hours per week for T4×2 and resumable sessions. Query current allowance before each launch; hardware availability is not guaranteed.
 7. The decode policy arrives frozen from the sampler track. This recipe does not tune it.
 8. HumanEval stays sealed until final evaluation.
 
@@ -368,7 +378,7 @@ Open decisions for Kriday:
 1. Corpus mix. Keep 50/35/15 as built, or shift toward 30-35% code, 45-50% web, 15-20% math, as `research/hillclimb-quality-ernie.md` recommends. Shifting means rebuilding and reauditing the corpus, and it invalidates the current hashes.
 2. Mask mode is now implemented as blockwise frontier masking for D1. A classical-mask comparison would be a separate, explicitly budgeted experiment.
 3. Peak learning rate. 1e-3 proposed, range 5e-4 to 2e-3. Three 50-step screens project to about 0.18 to 0.19 T4-hours before overhead and can reject unstable settings; they do not establish a convergence-optimal LR.
-4. Training volume. The reference D1 smoke proposal consumes about 100M corpus tokens; this is independent of the roughly 100M-parameter model size. Freeze or revise it against the current project plan before launch. The historical P2 500M-token arm-A reference is outside the six-hour ceiling.
+4. Training volume. The reference D1 smoke proposal consumes about 100M corpus tokens; this is independent of the roughly 100M-parameter model size. Freeze or revise it against the current project plan before launch. The historical P2 500M-token arm-A reference needs a separately measured allocation under the renewable weekly quota.
 5. Architecture and metric definitions are implemented and recorded in `D1_ARCHITECTURE.md`. The native T4 backend, parity, AMP resume and production P0 speed gate passed. The evaluation policy, total-time controller and operational readiness still block G3/P1.
 6. Micro-batch. Use 8 and accumulation 8 from production P0; a fallback needs its own probe.
 7. Number of seeds. Two is better. One is allowed with larger margins and a low-confidence label.
