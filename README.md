@@ -26,7 +26,8 @@ filters the full benchmark sets, and enforces the token mixture. The
 diffusion model on that packed bundle. The [T4 pilot recipe](docs/TRAINING_RECIPE_T4_PILOT.md)
 and [integration review](docs/TRAINING_INTEGRATION_REVIEW.md) record the D1 blockers
 and verified CPU checks. The [D1 implementation](docs/D1_ARCHITECTURE.md) adds the
-109M hybrid, block-causal training and immutable prefix caches, with GPU validation pending.
+109M hybrid, block-causal training and immutable prefix caches, with T4 checks and
+measured throughput recorded in `.verify/d1-t4/`.
 
 ## Backends
 

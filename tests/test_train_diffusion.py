@@ -451,11 +451,18 @@ def test_schedule_logs_lr_used_and_reaches_minimum(tmp_path):
     assert not any(r['optimizer_step_skipped'] for r in records)
 
 
-@pytest.mark.parametrize('name', ['lr', 'weight_decay', 'eps', 'grad_clip'])
+@pytest.mark.parametrize('name', ['lr', 'weight_decay', 'eps', 'grad_clip', 'amp_init_scale'])
 @pytest.mark.parametrize('value', [float('nan'), float('inf')])
 def test_rejects_nonfinite_hyperparameters(tmp_path, name, value):
     cfg = TrainConfig(bundle='unused', out=str(tmp_path), **{name: value})
     with pytest.raises(ValueError, match=f'{name} must be finite'):
+        train(cfg)
+
+
+@pytest.mark.parametrize('value', [0, -1])
+def test_rejects_nonpositive_amp_scale(tmp_path, value):
+    cfg = TrainConfig(bundle='unused', out=str(tmp_path), amp_init_scale=value)
+    with pytest.raises(ValueError, match='amp_init_scale must be > 0'):
         train(cfg)
 
 

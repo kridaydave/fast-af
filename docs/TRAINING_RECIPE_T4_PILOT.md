@@ -1,6 +1,6 @@
 # D1 training recipe and T4 pilot budget
 
-Architecture updated 2026-11-14; compute budget remains a draft. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; a T4-compatible accelerated backend, actual GPU checks and P0 measurements still block P1. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
+Updated 2026-11-15 with measured T4 infrastructure results; pilot authorization remains gated. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; the T4 backend, GPU parity and bounded probe are complete, while formal P0, evaluation protocol and operational gates still block P1. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
 
 Labels follow repo practice. MEASURED means a repo run produced it. PAPER means a cited primary source. DERIVED means arithmetic from repo numbers. ESTIMATE means a guess that the probe must replace. UNCONFIRMED means not yet checked.
 
@@ -55,7 +55,7 @@ From `spec/edgefast-diff-100m.md`:
 | Train context | 1024 for the pilot; longer-context behavior is unvalidated |
 | Precision | fp16 training, fp32 master weights for P0-P2; int4 QAT deferred (see below) |
 
-The previous five-query/two-KV layout was invalid for standard GQA. The implemented ten-query/two-KV layout preserves width 640. Forward GDN supplies recurrent state; attention provides bidirectional context inside each block. Every layer is block-causal across blocks. Prefix states remain independent of later noisy blocks, and each denoising round reuses the same entry state before a final clean commit pass. This is a specific engineering choice, not a claim of reproducing bidirectional Mamba or of measured T4 performance. See `D1_ARCHITECTURE.md` for code and validation commands.
+The previous five-query/two-KV layout was invalid for standard GQA. The implemented ten-query/two-KV layout preserves width 640. Forward GDN supplies recurrent state; attention provides bidirectional context inside each block. Every layer is block-causal across blocks. Prefix states remain independent of later noisy blocks, and each denoising round reuses the same entry state before a final clean commit pass. This is a specific engineering choice, not a claim of reproducing bidirectional Mamba. Measured T4 infrastructure results are recorded below. See `D1_ARCHITECTURE.md` for code and validation commands.
 
 The tied vocabulary table is 20,480,000 parameters. The exact full-model count includes GDN gates, convolution and normalization. Compute must be measured on that implementation and objective; parameter count alone is insufficient.
 
@@ -98,7 +98,8 @@ Values marked PROPOSED are standard defaults, not measured on T4. The probe can 
 | Schedule | linear warmup 2% of steps, cosine decay to 10% of peak | PROPOSED |
 | Minimum learning rate | 1e-4 | PROPOSED |
 | Global batch | 64 sequences x 1024 tokens, 65,536 tokens per step | FREEZE |
-| Micro-batch | 8 sequences, accumulation 8; accumulation adjusted for 4 or 16 to keep global 64 | PROPOSED, optional 50-step screen at 4/16 |
+| Micro-batch | 4 sequences, accumulation 16 | Recommended from bounded T4 memory screen; formal P0 still required |
+| GDN backend and AMP scale | `chunk`, `--amp-init-scale 256` | T4 parity and bounded probe passed; scaler may still adapt |
 | Gradient clipping | global norm 1.0 | PROPOSED |
 | Dropout | 0.0 | PROPOSED |
 | Init | normal 0.02, zero bias, residual outputs scaled by 1/sqrt(2*n_layers) | PROPOSED |
@@ -112,13 +113,13 @@ Values marked PROPOSED are standard defaults, not measured on T4. The probe can 
 
 Step math: 1,525 steps x 65,536 tokens = 99,942,400 tokens, just under one epoch of the 99,983,360-token corpus. 3,050 steps = 199,884,800 tokens. 7,629 full steps = 499,974,144 tokens for the unlooped reference arm. The loader emits a partial micro-batch at shard ends, so these are nominal token counts, not exact counts for arbitrary batch sizes. In particular, the real 5,480-row tail is not divisible by micro-batch 16. P1 should use 4 or 8 until a full-global-batch policy is implemented for 16. Small overshoots are fine, but the run must log actual tokens seen.
 
-Memory: native AMP keeps fp32 parameters, fp32 gradients, and two fp32 Adam moments, about 1.6 GB for 100M parameters, plus activations and temporary autocast copies. It does not require a separately checkpointed fp16 master copy. The earlier 1.6 to 2.5 GB range is a planning allowance, not a measurement. Micro-batch 8 should fit the 16 GB T4 with fallback kernels. The probe confirms and picks the micro-batch.
+Memory: native AMP keeps fp32 parameters, fp32 gradients, and two fp32 Adam moments, about 1.6 GB for 100M parameters, plus activations and temporary autocast copies. It does not require a separately checkpointed fp16 master copy. The earlier 1.6 to 2.5 GB range is a planning allowance, not a measurement. The real T4 screen measured 7.40 GiB allocated at micro-batch 4 and 12.69 GiB at 8. Batch 8 fit but exceeded the 85% allocation margin. Use 4 with accumulation 16 for the next P0.
 
 ## 5. Pilot stages
 
 ### P0: compute probe and config screen
 
-Run 200 steps at the production batch, sequence length, and mask mode, with micro-batch 8: 50 warmup steps, then three 50-step timed windows. Measure throughput. Optionally run a 50-step screen at micro-batch 4 and 16; that adds 100 steps (6.6M tokens) and 0.1-0.4 T4-h, outside the 22.9M base. Optionally run 50-step screens at three learning rates to pick the peak LR.
+Run 200 steps at the production batch, sequence length, and mask mode, with micro-batch 4 and accumulation 16: 50 warmup steps, then three 50-step timed windows. Measure throughput. Optional capacity screens must fit the T4 memory margin and have a separate update and wall-time cap. The bounded screen already tried 1, 2, 4 and 8; it did not test 16. Optionally run 50-step screens at three learning rates to pick the peak LR.
 
 Protocol:
 
@@ -130,6 +131,12 @@ Protocol:
 
 Model FLOPs utilization, or MFU, is effective TFLOPS divided by the T4's 65 TFLOPS fp16 peak. It tells us how much of the chip we actually use.
 
+Gate bands use **processed** tokens/s for hardware throughput. A loader token
+that is cropped as future context does not count as model work. Use consumed
+corpus tokens/s separately when budgeting a corpus epoch. The bounded T4 probe
+measured 3.17k processed tokens/s with uniform frontiers, below the red threshold.
+Do not treat its 6.70k consumed tokens/s as a hardware throughput pass.
+
 Gate bands:
 
 | Measured throughput | Decision |
@@ -138,7 +145,7 @@ Gate bands:
 | 6,000 to 13,000 tok/s | yellow. Cut the pilot token budget or change block and sequence settings. |
 | Below 6,000 tok/s | red. Stop. Change config before spending weeks. |
 
-This matches the week-2 probe in `research/quality-fixplan-ernie.md` and `research/l1-fix.md`. The probe costs about 0.3 T4-hours at the optimistic throughput and 0.7 at the floor. The LR screen adds about 0.2 and 0.5.
+This matches the week-2 probe in `research/quality-fixplan-ernie.md` and `research/l1-fix.md`. At the bounded measured rates, 200 formal P0 updates cost about 0.54 to 1.04 T4-hours before overhead. Three 50-step LR screens add about 0.41 to 0.78 hours. These are extrapolations, not completed runs.
 
 ### P1: base D1 smoke pretrain
 
@@ -238,65 +245,81 @@ Eval budget: bound it. Full frontier validation cost is unmeasured and must be i
 
 ## 8. Compute budget
 
-### Cost model
+### Measured bounded probe, 2026-11-14
 
-The inherited provisional dense cost model uses training FLOPs per processed token = 6N for forward and backward, plus a provisional attention-sequence term at seq 1024 of about 0.2N forward and 0.4N backward. For N=100M that is about 6.6e8 FLOPs per token; the dense 6N floor is 6.0e8. Parameter count alone is insufficient for the hybrid or looped arm: count layer operations, attention sequence length, tied output projection, and backward unrolling before freezing. The table below predates the implemented frontier objective and is unvalidated; the FLOPs number is for the P2 matched-compute check. This matches `research/quality-fixplan-ernie.md` section 6, which used 6N and called the attention term small.
+The full 109,137,632-parameter model ran on a Colab Tesla T4, SM75, with PyTorch
+2.14.1+cu130 and CUDA 13.0. Context was 1024, global batch 64, micro-batch 4,
+accumulation 16, native `chunk` GDN, fp16 autocast and FP32 state, solve and
+optimizer. Loss scale started at 256. The job used 20 updates in 378.3 seconds,
+including four memory screens, four warmup updates and twelve timed updates.
+Each objective has three windows of two updates. No timed updates were skipped.
+This is MEASURED infrastructure evidence, not the 200-step formal P0 or a
+convergence result. Raw reports and scope are in [the T4 evidence](../.verify/d1-t4/README.md).
 
-Throughput anchors, all ESTIMATE until P0 measures them:
-
-- A1: 11.43 ms per forward pass, fp16 batch 1, smoldlm-144m on T4. MEASURED-DERIVED from the legacy `results_t4.yaml` row, 349.979 tok/s and 256 passes. Current master documents that row as uncached with incomplete accounting. It is an inference arithmetic anchor, not a D1 training-throughput measurement; use the P0 probe for decisions.
-- A2: batch 8 raises per-pass throughput about 2.5x. ESTIMATE.
-- A3: training at 13,000 tok/s, about 8-8.6 effective TFLOPS, about 12-13% MFU on the T4's 65 TFLOPS fp16 peak. ESTIMATE. The same source gives 5,000 tok/s as the floor.
-
-These anchors are why the budget is a range and not a number.
-
-### Budget table
-
-Tokens per T4-hour: 46.8M at 13,000 tok/s, 18M at 5,000 tok/s.
-
-| Item | Tokens | T4-h at 13,000 | T4-h at 5,000 |
+| Objective | Median consumed corpus tokens/s | Median processed tokens/s | Median scored tokens/s |
 |---|---:|---:|---:|
-| P0 probe and LR screen | 22.9M | 0.5 | 1.3 |
-| P1 smoke, 100M | 99.9M | 2.1 | 5.6 |
-| P1 smoke, 200M | 199.9M | 4.3 | 11.1 |
-| P2 twins, matched compute at 500M arm-A reference | 999.9M A-equivalent | 21.4 | 55.6 |
-| Evaluation, bounded | | 5-8 | 5-8 |
-| Contingency, 30% of P0-P2 training | | 7-8 | 19-21 |
-| P3 pretrain, 3B, training only | 3,000M | 64.1 | 166.7 |
-| P3 pretrain, 3B, with 30% contingency | 3,000M | 83 | 217 |
+| Last frontier, full context | 3,490 | 3,490 | 53.9 |
+| Uniform frontier, training objective | 6,699 | 3,173 | 104.3 |
 
-The P2 row budgets two arm-A-equivalent compute allotments for one paired seed, not equal physical tokens or measured B throughput. Add another P2 row and its contingency for a second paired seed. Loop overhead and checkpointing still require separate measurement.
+Uniform-frontier consumed throughput ranged from 5,855 to 7,091 tokens/s as the
+sampled prefix lengths changed. The aggregate over all three windows was 6,506
+consumed and 3,141 processed tokens/s. The median is a short-run budget anchor,
+not an established long-run rate. The full-context rate is a useful conservative
+scenario, not a guaranteed lower bound.
 
-The P0 base is 200 probe steps plus 3x50 LR-screen steps = 350 steps / 22.9M tokens. The optional micro-batch screen at 4 and 16 adds 100 steps / 6.6M tokens and 0.1-0.4 T4-h. The budget-table contingency row is 30% of the full P0-P2 training subtotal (0.5+2.1+21.4 T4-h), not of P3; the minimal pilot uses 30% of its smaller P0+P1 subtotal. The P3 row adds its own 30%.
+Peak allocated memory in the chosen full-context windows was 7.40 GiB. Peak
+reserved memory was 13.06 GiB because the earlier batch-8 screen left allocator
+segments cached. The screen measured 12.69 GiB allocated at batch 8, so batch 4
+was selected for headroom. These measurements include optimizer state and
+training activations. Evaluation and checkpoint I/O were excluded.
 
-Plans:
+### Revised budget
 
-| Plan | Content | T4-h, optimistic | T4-h, conservative | Wall clock at 30 h/week |
-|---|---|---:|---:|---|
-| Minimal pilot | P0 + P1 100M + eval + contingency | 8-11 | 14-17 | about 1 week |
-| Full pilot | P0 + P1 100M + P2 + eval + contingency | 36-39 | 86-90 | 1.5-3 weeks, likely 2-5 with churn |
-| Single 3B pretrain | P3 + 30% contingency | 83 | 217 | 2.5-4 weeks optimistic, 6-8 conservative |
+The old 5,000 to 13,000 processed-token/s estimate is superseded. For corpus-token
+budgets, the scenarios below use median **consumed** rates of 6,699 and 3,490.
+Every time is DERIVED by `tokens / consumed_tokens_per_second / 3600`.
+The 30% allowance and evaluation costs remain ESTIMATES. Full-frontier validation,
+checkpoint transfer, provider interruptions and long-run stability remain unmeasured.
 
-The 3B row includes its own 30% contingency; the P0-P2 rows are training-only and use the separate contingency row.
+| Item | Nominal corpus tokens | T4-h at sampled frontiers | T4-h at full context |
+|---|---:|---:|---:|
+| P0, 200-step probe plus three 50-step LR screens | 22.94M | 0.95 | 1.83 |
+| P1, 1,525 updates | 99.94M | 4.14 | 7.95 |
+| P1, 3,050 updates | 199.88M | 8.29 | 15.91 |
+| P2 twins, one paired seed | 999.95M A-equivalent | 41.46 | 79.59 |
+| Evaluation allowance | separate | 5 to 8 | 5 to 8 |
+| P3, training only | 3,000M | 124.39 | 238.78 |
+| P3 with 30% allowance | 3,000M | 161.71 | 310.42 |
 
-The full pilot (P0 + P1 100M + P2) is the recommended commit. It answers whether looping helps at our scale, proves the pipeline, and leaves a clean negative or positive. The 3B run is a separate decision after P2 and after the corpus grows.
+The P2 row is a provisional extrapolation of two unlooped arm-A compute budgets.
+The looped arm is unimplemented and unmeasured. Its throughput, operation count
+and matched-compute token count must be measured before committing to P2.
+No MFU or effective TFLOPS is claimed from a parameter-count estimate.
 
-### How to measure and update
+| Plan | T4-hours with 30% training allowance and 5 to 8 evaluation hours |
+|---|---:|
+| P0 plus P1 100M | about 12 to 21 |
+| P0 plus P1 100M plus P2, one paired seed | about 66 to 125 |
 
-The probe is the instrument. After P0:
+At the assumed 30 GPU-hours/week, the latter is about 2.2 to 4.2 weeks of quota,
+with calendar time potentially longer. This quota is a planning assumption.
+It was not established by this session. A second paired seed adds its own P2
+compute, evaluation and restart allowance.
 
-1. Replace 13,000 with the measured median throughput.
-2. Recompute every line in the budget table.
-3. Freeze the revised table in the run config before P1 or P2 spends real hours.
-4. During training, log cumulative tokens seen, wall time, and GPU-hours at every checkpoint. Compute the trailing average throughput. If it drifts more than 20% from the probe, flag it and re-estimate.
-5. Report final GPU-hours separately for training, evaluation, and failed or restarted work.
+My recommendation is to keep P1 blocked, profile the native chunk path, and run
+the already specified formal P0 only after reviewing that plan. The implementation
+now fits T4 and passes numerical checks, but the measured processed-token rate
+fails the existing speed gate. A shorter pilot, a faster SM75 kernel, or newer
+hardware are separate decisions. A long pretrain is not justified by this probe.
 
-Uncertainty, stated plainly:
+### How to update
 
-- The dominant term is throughput. The 5,000 to 13,000 range is a factor of 2.6 and it is an ESTIMATE from secondary arithmetic.
-- The second term is overhead: checkpoint I/O, evaluation, and session deaths. The 30% contingency covers it.
-- The third term is the token budget for P2, which is chosen after the probe.
-- After P0, throughput uncertainty drops to measurement noise, about plus or minus 10%, and the remaining budget uncertainty is roughly plus or minus 30% including overheads. Quote ranges, not points.
+1. Record all three token denominators, applied updates and AMP rejections.
+2. Replace the short-run rates with production-corpus P0 windows.
+3. Measure full-frontier validation, checkpoint write/upload and interruption loss.
+4. Freeze the revised config and budget before P1; if throughput drifts by more
+   than 20%, stop and re-estimate.
+5. Report GPU-hours separately for training, evaluation and restarted work.
 
 ## 9. Assumptions and open decisions
 
@@ -305,8 +328,8 @@ Assumptions this recipe makes:
 1. The pipeline branch builds and owns loading, masking, training, and checkpointing. This document is its contract.
 2. fp16 training on T4, because T4 has no bf16; int4 QAT is deferred until after P2, and the pilot trains at 1024 context with longer context deferred.
 3. The corpus is reused as built for P1. The audit passed with n-gram and substring checks, but semantic contamination is not ruled out. An additional semantic pass is proposed, not completed.
-4. D1 uses the implemented blockwise frontier objective; classical masking remains a separate smoke profile. Quality and throughput of D1 are unmeasured.
-5. Throughput anchors are ESTIMATES until P0 replaces them.
+4. D1 uses the implemented blockwise frontier objective; classical masking remains a separate smoke profile. Quality is unmeasured; bounded T4 throughput is measured in section 8.
+5. Section 8 uses bounded measured throughput; formal P0 must establish sustained rates.
 6. Planning uses 30 GPU-hours per week and interruptible sessions; current provider quotas and GPU availability are unverified.
 7. The decode policy arrives frozen from the sampler track. This recipe does not tune it.
 8. HumanEval stays sealed until final evaluation.
@@ -315,12 +338,12 @@ Open decisions for Kriday:
 
 1. Corpus mix. Keep 50/35/15 as built, or shift toward 30-35% code, 45-50% web, 15-20% math, as `research/hillclimb-quality-ernie.md` recommends. Shifting means rebuilding and reauditing the corpus, and it invalidates the current hashes.
 2. Mask mode is now implemented as blockwise frontier masking for D1. A classical-mask comparison would be a separate, explicitly budgeted experiment.
-3. Peak learning rate. 1e-3 proposed, range 5e-4 to 2e-3. Three 50-step screens cost about 0.2 to 0.5 T4-hours and can reject unstable settings; they do not establish a convergence-optimal LR.
+3. Peak learning rate. 1e-3 proposed, range 5e-4 to 2e-3. Three 50-step screens cost about 0.4 to 0.8 T4-hours at the measured scenario rates and can reject unstable settings; they do not establish a convergence-optimal LR.
 4. Pilot size. 100M for P1, then matched P2 compute referenced to 500M arm-A tokens, subject to the probe. A 1B arm-A reference is a stretch.
-5. Architecture and metric definitions are implemented and recorded in `D1_ARCHITECTURE.md`. A T4-compatible accelerated backend, hardware checks, AMP resume and the measured budget still block G3/P1.
-6. Micro-batch. The probe picks among 4, 8, and 16.
+5. Architecture and metric definitions are implemented and recorded in `D1_ARCHITECTURE.md`. The native T4 backend, parity checks and AMP resume passed. Formal P0, the speed gate, evaluation policy and operational readiness still block G3/P1.
+6. Micro-batch. Use 4 and accumulation 16 from the bounded memory screen; confirm in formal P0.
 7. Number of seeds. Two is better. One is allowed with larger margins and a low-confidence label.
-8. Kernel stack. The pinned modern FLA/Triton stack requires SM80+ and explicitly rejects T4/SM75. A performant T4-compatible backend must be implemented and validated, or the hardware plan must be revised, before P0. The Torch recurrence is a correctness path with no T4 performance evidence. Any kernel-stack change requires a new probe. The current repo measurements are on the lean stack without them.
+8. Kernel stack. The pinned modern FLA/Triton stack requires SM80+ and explicitly rejects T4/SM75. The native PyTorch `chunk` path now passes T4 checks, but is below the processed-token speed gate. Profile it before investing in a custom SM75 kernel or revising hardware. Any kernel-stack change requires new parity and throughput evidence.
 9. Checkpoint retention and Drive space. A checkpoint is 1.4 to 2 GB, so retention needs a decision.
 10. Whether to run the full 3B pretrain at all if P2 fails. The fallback is a single base pretrain and a published negative result.
 11. Precision. The spec lists int4 QAT from the start; the quality plan says defer it until a baseline exists. This recipe freezes fp16 for P0-P2. Decide whether int4 QAT is a P3 gate or a post-P2 product run.
@@ -332,4 +355,4 @@ Repo facts: `artifacts/training-v1/final/manifest.json`, `audit.json`, `tokenize
 
 External sources cited: arXiv 2508.19529 (blockwise SFT, LLaDA-8B-Instruct LoRA), arXiv 2602.12413 (soft contamination; no single standard filter removes more than 6.5%), arXiv 2503.03862 and REGMIX (mix guidance), arXiv 2605.26106 (LoopMDM, 170M), arXiv 2610.18127 and 2604.07822 (looping counter-evidence), arXiv 2108.07732 (MBPP template), arXiv 2502.02737 (SmolLM2 calibration). Full ledgers live in `research/hillclimb-quality-ernie.md` and `research/l1-final.md`.
 
-Numbers not from those sources are labeled DERIVED or ESTIMATE in place. Nothing in this document was measured on a GPU in this session.
+Numbers not from those sources are labeled DERIVED or ESTIMATE in place. The T4 measurements in section 8 are backed by `.verify/d1-t4/`; other estimates retain their labels.

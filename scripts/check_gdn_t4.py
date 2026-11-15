@@ -18,16 +18,22 @@ from torch.nn import functional as F
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.d1_model import (D1Config, D1LM, GatedDeltaNet, gated_delta_chunked,
+from scripts.d1_model import (D1Config, D1LM, GatedDeltaNet, GDNState, gated_delta_chunked,
                               gated_delta_reference)
 from scripts.train_diffusion import (TrainConfig, ShardLoader, block_diffusion_mask,
     build_optimizer, load_checkpoint, masked_cross_entropy, optimizer_step)
 
+# The saved T4 layer diagnostic overflows at scale 8192, including the input
+# gradient. Scale 256 passed parity and six applied checkpoint/resume updates.
+AMP_INIT_SCALE = 256.0
+# Steps the resume check runs, so it can require a real update on every one.
+RESUME_STEPS = 6
+
 
 def comparison(expected, actual, relative, absolute, label):
     a, b = expected.detach().float().cpu(), actual.detach().float().cpu()
-    if not bool(torch.isfinite(b).all()):
-        raise AssertionError(f'{label}: non-finite output')
+    if not bool(torch.isfinite(a).all() and torch.isfinite(b).all()):
+        raise AssertionError(f'{label}: non-finite reference or output')
     error = float(torch.linalg.vector_norm(a - b))
     scale = float(torch.linalg.vector_norm(a))
     result = {'relative_l2': error / max(scale, 1e-12), 'max_abs': float((a - b).abs().max()),
@@ -56,7 +62,7 @@ def core_parity():
             gpu = [t.detach().cuda().requires_grad_() for t in cpu]
             expected, es = gated_delta_reference(*cpu)
             with amp_context(amp):
-                actual, state = gated_delta_chunked(*gpu)
+                actual, state = gated_delta_chunked(gpu[0], gpu[1], gpu[2], gpu[3], gpu[4], gpu[5])
             probes = torch.randn_like(expected), torch.randn_like(es)
             cg = torch.autograd.grad((expected * probes[0]).sum() + (es * probes[1]).sum(), cpu)
             gg = torch.autograd.grad((actual * probes[0].cuda()).sum() + (state * probes[1].cuda()).sum(), gpu)
@@ -95,12 +101,13 @@ def layer_parity():
         gpu_loss = (actual.float() * probe.cuda()).sum() + 0.1 * (state.recurrent * sp.cuda()).sum()
         cpu_loss.backward()
         optimizer = torch.optim.SGD(gpu.parameters(), lr=0)
-        scaler = torch.amp.GradScaler('cuda', enabled=amp, init_scale=8192)
+        scaler = torch.amp.GradScaler('cuda', enabled=amp, init_scale=AMP_INIT_SCALE)
         scale = scaler.get_scale()
         scaler.scale(gpu_loss).backward()
         scaler.unscale_(optimizer)
+        assert x.grad is not None and y.grad is not None
         relative = 0.05 if amp else 0.003
-        result = {'mode': 'amp-fp16' if amp else 'fp32',
+        result = {'mode': 'amp-fp16' if amp else 'fp32', 'amp_init_scale': AMP_INIT_SCALE,
                   'output': comparison(expected, actual, relative, 1e-6, 'layer output'),
                   'state': comparison(es.recurrent, state.recurrent, relative, 1e-6, 'layer state'),
                   'conv': [comparison(a,b,relative,1e-6,'conv') for a,b in zip(es.conv,state.conv)],
@@ -132,7 +139,8 @@ def full_parity():
         with torch.no_grad(), amp_context(amp):
             actual = gpu(tokens.cuda())
             entry = gpu.prefill(tokens[:, :32].cuda())
-            snapshot = [s.recurrent.clone() if hasattr(s,'recurrent') else s.keys.clone() for s in entry.layers]
+            assert entry is not None
+            snapshot = [s.recurrent.clone() if isinstance(s,GDNState) else s.keys.clone() for s in entry.layers]
             gpu.forward_block(torch.zeros(1,32,dtype=torch.long,device='cuda'),entry)
             cached, committed = gpu.forward_block(tokens[:,32:64].cuda(),entry)
             tail, _ = gpu.forward_block(tokens[:,64:].cuda(),committed)
@@ -141,7 +149,7 @@ def full_parity():
                         'cpu_output':comparison(expected,actual,relative,1e-5,'full CPU logits'),
                         'cached':comparison(actual[:,32:64],cached,0.003,1e-5,'cached logits'),
                         'committed':comparison(actual[:,64:],tail,0.003,1e-5,'committed logits')})
-        assert all(torch.equal(a, s.recurrent if hasattr(s,'recurrent') else s.keys)
+        assert all(torch.equal(a, s.recurrent if isinstance(s,GDNState) else s.keys)
                    for a,s in zip(snapshot,entry.layers))
         print(json.dumps({'full_forward_passed':{'amp':amp}}),flush=True)
     # Full 109M parameter gradients against CPU reference on a masked 32-token block.
@@ -154,7 +162,7 @@ def full_parity():
     for amp in (False,True):
         gpu.train(); gpu.zero_grad(set_to_none=True)
         optimizer = torch.optim.SGD(gpu.parameters(),lr=0)
-        scaler = torch.amp.GradScaler('cuda',enabled=amp,init_scale=8192)
+        scaler = torch.amp.GradScaler('cuda',enabled=amp,init_scale=AMP_INIT_SCALE)
         with amp_context(amp):
             logits = gpu(noisy.cuda())
             actual_loss = F.cross_entropy(logits[:,::2].flatten(0,1).float(),targets[:,::2].flatten().cuda())
@@ -164,7 +172,8 @@ def full_parity():
         for (name,a),(_,b) in zip(cpu.named_parameters(),gpu.named_parameters()):
             assert a.grad is not None and b.grad is not None,name
             gradients[name]=comparison(a.grad,b.grad,relative,1e-7,name)
-        results.append({'mode':'amp-fp16' if amp else 'fp32','masked_ce_cpu':float(loss.detach()),
+        results.append({'mode':'amp-fp16' if amp else 'fp32','amp_init_scale':AMP_INIT_SCALE,
+                        'masked_ce_cpu':float(loss.detach()),
                         'masked_ce_cuda':float(actual_loss.detach()),'parameter_gradients':gradients})
         scaler.step(optimizer);scaler.update()
         print(json.dumps({'full_backward_passed':{'amp':amp}}),flush=True)
@@ -178,7 +187,8 @@ def resume_check(root):
     bundle=root/'src'/'probe-bundle'
     base=[sys.executable,'-u',str(source/'train_diffusion.py'),'--bundle',str(bundle),
           '--profile','d1','--gdn-backend','chunk','--device','cuda','--amp',
-          '--steps','6','--warmup','1','--batch-size','1','--grad-accum','1',
+          '--amp-init-scale',str(AMP_INIT_SCALE),
+          '--steps',str(RESUME_STEPS),'--warmup','1','--batch-size','1','--grad-accum','1',
           '--checkpoint-every','3','--eval-every','3','--eval-batches','1','--verify-hashes']
     def run(name,extra=()):
         result=subprocess.run(base+['--out',str(root/name)]+list(extra),capture_output=True,text=True,timeout=300)
@@ -191,6 +201,7 @@ def resume_check(root):
                            stderr=subprocess.STDOUT,text=True)
     lines=[]
     try:
+        assert child.stdout is not None
         for line in child.stdout:
             lines.append(line)
             if line.startswith('{') and json.loads(line).get('step')==4:
@@ -213,7 +224,12 @@ def resume_check(root):
     left=load_checkpoint(root/'resume-full'/'checkpoint-000006.pt')
     right=load_checkpoint(root/'resume-restarted'/'checkpoint-000006.pt')
     assert left['scheduler']==right['scheduler'] and left['loader']==right['loader']
-    assert left['scheduler']['last_epoch']>0,'no successful AMP updates'
+    assert left['scheduler']['last_epoch']==RESUME_STEPS, (
+        f"{RESUME_STEPS - left['scheduler']['last_epoch']} AMP updates were skipped; "
+        'the resume comparison would cover no-op steps')
+    skipped=[line for line in (root/'resume-full.log').read_text().splitlines()
+             if line.startswith('{') and json.loads(line).get('optimizer_step_skipped')]
+    assert not skipped,'AMP skipped updates in the uninterrupted run'
     for key in ('step','tokens_seen','tokens_processed','tokens_scored','scaler'):
         assert left[key]==right[key],key
     for key in ('torch','cuda'):
@@ -228,7 +244,8 @@ def resume_check(root):
             other=right['optimizer']['state'][index][key]
             metric=comparison(value,other,1e-3,1e-5,f'optimizer {index} {key}')
             optimizer_max=max(optimizer_max,metric['max_abs'])
-    return {'params':json.loads(full.splitlines()[-1])['params'],'context':1024,'amp':True,
+    return {'params':json.loads(full.splitlines()[-1])['params'],'context':1024,
+            'amp':True,'amp_init_scale':AMP_INIT_SCALE,'steps':RESUME_STEPS,
             'global_batch':1,'step':6,'kill_trigger_step':4,'killed_exit_code':child.returncode,
             'resume_step':3,'tokens_seen':left['tokens_seen'],'tokens_processed':left['tokens_processed'],
             'tokens_scored':left['tokens_scored'],'successful_updates':left['scheduler']['last_epoch'],
@@ -238,8 +255,12 @@ def resume_check(root):
             'loader_scheduler_scaler_rng_equal':True}
 
 
-def probe(root):
-    # Explicit limits: at most 24 updates and 300 seconds of measured/probe work.
+def probe(root, wall_cap=600.0, update_cap=24, forced_micro=None):
+    # Bounds apply to attempted updates, including AMP rejections.
+    if not 0 < wall_cap <= 600 or not 1 <= update_cap <= 24:
+        raise ValueError('probe caps must be within 600 seconds and 24 updates')
+    if forced_micro is not None and forced_micro not in (1, 2, 4, 8):
+        raise ValueError('micro-batch must be one of 1, 2, 4, 8')
     for phase in ('parity','resume'):
         evidence=json.loads((root/f'{phase}.json').read_text())
         assert evidence['status']=='PASS' and evidence['gpu']=='Tesla T4',phase
@@ -253,14 +274,16 @@ def probe(root):
     model=D1LM(32000,1024,backend='chunk').cuda().train()
     optimizer=build_optimizer(model,cfg)
     scheduler=torch.optim.lr_scheduler.LambdaLR(optimizer,lambda step:1.0)
-    scaler=torch.amp.GradScaler('cuda',init_scale=8192)
+    scaler=torch.amp.GradScaler('cuda',init_scale=AMP_INIT_SCALE)
     result={'params':sum(p.numel() for p in model.parameters()),'context':1024,'global_batch':64,
             'backend':'chunk','precision':'fp16 autocast; FP32 delta state/solve and optimizer',
-            'initial_scale':8192,'max_updates':24,'wall_cap_seconds':300,'screens':[],'windows':[]}
+            'initial_scale':AMP_INIT_SCALE,'max_updates':update_cap,
+            'wall_cap_seconds':wall_cap,'screens':[],'windows':[]}
     updates=0
     def update(micro,mode):
         nonlocal updates
-        if updates>=24 or time.monotonic()-started>=300:raise TimeoutError('bounded probe cap reached')
+        if updates>=update_cap or time.monotonic()-started>=wall_cap:
+            raise TimeoutError('bounded probe cap reached')
         local=replace(cfg,batch_size=micro,grad_accum=64//micro)
         loader=ShardLoader(local.bundle,batch_size=micro,seed=17,vocab=32000)
         # Match trainer: draw all corruption before forwards; weight by scored tokens.
@@ -299,33 +322,53 @@ def probe(root):
             optimizer.zero_grad(set_to_none=True);gc.collect();torch.cuda.empty_cache()
             result['screens'].append({'micro_batch':micro,'status':'OOM'})
             break
-    usable=[r for r in result['screens'] if r['status']=='PASS' and r['peak_allocated_bytes']<0.85*torch.cuda.get_device_properties(0).total_memory]
+    usable=[r for r in result['screens'] if r['status']=='PASS' and not r['skipped']
+            and r['peak_allocated_bytes']<0.85*torch.cuda.get_device_properties(0).total_memory]
     assert usable,'no micro-batch fits with safety margin'
-    chosen=max(usable,key=lambda r:r['micro_batch'])['micro_batch']
+    if forced_micro:
+        # Measurement override: lets a bounded run compare a micro-batch the
+        # safety margin rejects, without changing the margin itself.
+        assert any(s['micro_batch']==forced_micro and s['status']=='PASS' and not s['skipped']
+                   for s in result['screens']),f'micro-batch {forced_micro} did not fit'
+        chosen=forced_micro;result['micro_batch_source']='forced'
+    else:
+        chosen=max(usable,key=lambda r:r['micro_batch'])['micro_batch']
+        result['micro_batch_source']='auto (85% of device memory)'
     result['selected_micro_batch']=chosen;result['grad_accum']=64//chosen
     try:
         for mode in ('full-context','uniform-frontier'):
             for _ in range(2):update(chosen,mode)
             for window in range(3):
                 torch.cuda.reset_peak_memory_stats();torch.cuda.synchronize();start=time.monotonic()
-                rows=[update(chosen,mode) for _ in range(2)]
+                rows=[];applied=0
+                while applied<2:
+                    # A rejected AMP step still burns compute and tokens, so it stays
+                    # in the timing and only stops counting as an applied update.
+                    row=update(chosen,mode);rows.append(row)
+                    applied+=0 if row['skipped'] else 1
+                    assert sum(r['skipped'] for r in rows)<3,'AMP rejected three attempts in one window'
                 torch.cuda.synchronize();seconds=time.monotonic()-start
                 totals={key:sum(r[key] for r in rows) for key in ('consumed','processed','scored','skipped')}
-                measured={'mode':mode,'window':window,'updates':2,'seconds':seconds,**totals,
+                measured={'mode':mode,'window':window,'applied_updates':applied,'attempts':len(rows),
+                          'seconds':seconds,**totals,
                           'consumed_tokens_per_second':totals['consumed']/seconds,
                           'processed_tokens_per_second':totals['processed']/seconds,
                           'scored_tokens_per_second':totals['scored']/seconds,
                           'peak_allocated_bytes':torch.cuda.max_memory_allocated(),
                           'peak_reserved_bytes':torch.cuda.max_memory_reserved()}
-                assert not totals['skipped'],'AMP skipped probe updates; not a useful-update measurement'
                 result['windows'].append(measured)
                 print(json.dumps({'window':measured}),flush=True)
     except TimeoutError as error:
         result['limit_reached']=str(error)
     result.update(updates_run=updates,wall_seconds=time.monotonic()-started,
+                  final_scale=scaler.get_scale(),
                   validation_overhead_included=False,checkpoint_overhead_included=False,
                   data_scope='single verified real-token shard subset, cached local I/O; no long run')
     assert result['windows'],'no completed timing windows'
+    # A single objective is not the measurement the pilot budget needs.
+    measured={window['mode'] for window in result['windows']}
+    assert measured=={'full-context','uniform-frontier'}, (
+        f'timing windows cover {sorted(measured)} only; raise the wall cap and re-measure')
     return result
 
 
@@ -333,6 +376,12 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--phase',choices=('parity','resume','probe'),required=True)
     p.add_argument('--root',type=Path,required=True)
+    p.add_argument('--wall-cap',type=float,default=600.0,
+                   help='measured-work cap in seconds for the probe phase')
+    p.add_argument('--update-cap',type=int,default=24,
+                   help='optimizer-update cap for the probe phase')
+    p.add_argument('--micro-batch',type=int,default=None,
+                   help='measure this micro-batch instead of the automatic choice')
     p.add_argument('--out',type=Path,required=True)
     args=p.parse_args()
     torch.set_num_threads(1)
@@ -352,7 +401,8 @@ def main():
             report['checks']['layer']=layer_parity()
             report['checks']['full_model']=full_parity()
         elif args.phase=='resume': report['checks']['resume']=resume_check(args.root)
-        else: report['checks']['probe']=probe(args.root)
+        else: report['checks']['probe']=probe(args.root,args.wall_cap,args.update_cap,
+                                              args.micro_batch)
         report['status']='PASS'
         code=0
     except Exception as error:

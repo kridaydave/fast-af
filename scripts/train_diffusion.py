@@ -397,6 +397,7 @@ class TrainConfig:
     threads: int = 1
     device: str = 'cpu'
     amp: bool = False
+    amp_init_scale: float = 65536.0
     eval_batches: int = 8
     eval_full: bool = False
     profile: str = 'smoke'
@@ -416,7 +417,7 @@ def config_hash_of(cfg):
 
 
 def _validate(cfg):
-    for name in ('lr', 'grad_clip', 'weight_decay', 'eps'):
+    for name in ('lr', 'grad_clip', 'weight_decay', 'eps', 'amp_init_scale'):
         if not math.isfinite(getattr(cfg, name)):
             raise ValueError(f'{name} must be finite')
     for name in ('steps', 'batch_size', 'grad_accum', 'checkpoint_every', 'threads',
@@ -443,6 +444,8 @@ def _validate(cfg):
         raise ValueError('betas must be in [0, 1)')
     if cfg.eps <= 0:
         raise ValueError('eps must be > 0')
+    if cfg.amp_init_scale <= 0:
+        raise ValueError('amp_init_scale must be > 0')
     if cfg.device not in ('cpu', 'cuda'):
         raise ValueError('device must be cpu or cuda')
     if cfg.device == 'cuda' and not torch.cuda.is_available():
@@ -694,7 +697,7 @@ def train(cfg, resume=None, log=print):
                     'metric': 'masked_ce'}))
     optimizer = build_optimizer(model, cfg)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: lr_at(step, cfg) / cfg.lr)
-    scaler = torch.amp.GradScaler(device.type, enabled=cfg.amp)
+    scaler = torch.amp.GradScaler(device.type, enabled=cfg.amp, init_scale=cfg.amp_init_scale)
     loader = ShardLoader(cfg.bundle, 'train', cfg.batch_size, cfg.seed, cfg.verify_hashes,
                          vocab=vocab)
     step, tokens_seen, tokens_processed, tokens_scored = 0, 0, 0, 0
@@ -831,6 +834,7 @@ def main(argv=None):
     p.add_argument('--threads', type=int, default=1)
     p.add_argument('--device', choices=('cpu', 'cuda'), default='cpu')
     p.add_argument('--amp', action='store_true')
+    p.add_argument('--amp-init-scale', type=float, default=65536.0)
     p.add_argument('--profile', choices=('smoke', 'd1'), default='smoke')
     p.add_argument('--d1-config', type=Path, help='JSON D1Config; defaults to the frozen 16-layer model')
     p.add_argument('--gdn-backend', choices=('torch', 'chunk', 'fla'), default='torch')
@@ -850,6 +854,7 @@ def main(argv=None):
                       n_heads=a.n_heads, grad_clip=a.grad_clip, grad_accum=a.grad_accum,
                       weight_decay=a.weight_decay, beta1=a.beta1, beta2=a.beta2,
                       eps=a.eps, threads=a.threads, device=a.device, amp=a.amp,
+                      amp_init_scale=a.amp_init_scale,
                       profile=a.profile, d1=d1, gdn_backend=a.gdn_backend, p1=a.p1, verify_hashes=a.verify_hashes)
     try:
         summary = train(cfg, resume=a.resume)

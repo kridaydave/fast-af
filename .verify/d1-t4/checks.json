@@ -1,0 +1,93 @@
+{
+  "local_environment": {
+    "python": "3.14.8",
+    "torch": "2.15.0+cpu",
+    "cuda_available": false
+  },
+  "commands": [
+    {
+      "command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 /usr/bin/python -m pytest -q --ignore=tests/test_smoldlm_cache.py --ignore=tests/test_smoldlm_wiring.py",
+      "log": "pytest-main.log",
+      "exit_code": 0,
+      "passed": 232,
+      "skipped": 2
+    },
+    {
+      "command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 /usr/bin/python -m pytest tests/test_smoldlm_cache.py -q",
+      "exit_code": 0,
+      "passed": 12,
+      "log": "pytest-cache.log"
+    },
+    {
+      "command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 /usr/bin/python -m pytest tests/test_smoldlm_wiring.py -q",
+      "exit_code": 0,
+      "passed": 4,
+      "log": "pytest-wiring.log"
+    },
+    {
+      "command": "/usr/bin/python -m pytest tests/test_t4_probe_tools.py tests/test_train_diffusion.py -q",
+      "exit_code": 0,
+      "passed": 67,
+      "skipped": 1,
+      "log": "pytest-targeted.log"
+    }
+  ],
+  "type_checks": {
+    "tool": "basedpyright",
+    "mode": "basic",
+    "scopes": [
+      [
+        "scripts/d1_model.py",
+        "scripts/validate_d1.py"
+      ],
+      [
+        "scripts/build_probe_bundle.py",
+        "scripts/check_gdn_t4.py"
+      ]
+    ],
+    "errors": 0,
+    "warnings": 0
+  },
+  "ruff": {
+    "rules": "F",
+    "exit_code": 0,
+    "files": [
+      "scripts/d1_model.py",
+      "scripts/train_diffusion.py",
+      "scripts/check_gdn_t4.py",
+      "scripts/build_probe_bundle.py",
+      "tests/test_t4_probe_tools.py",
+      "tests/test_train_diffusion.py"
+    ]
+  },
+  "compile": {
+    "exit_code": 0,
+    "files": [
+      "scripts/d1_model.py",
+      "scripts/train_diffusion.py",
+      "scripts/check_gdn_t4.py",
+      "scripts/build_probe_bundle.py"
+    ]
+  },
+  "real_corpus_subset": {
+    "exit_code": 0,
+    "source": "/home/kriday/Code/AI/fast-af-boi/artifacts/training-v1/final",
+    "train_tokens": 131072,
+    "validation_tokens": 32768,
+    "fingerprint": "ec6f6545c91ae536ed75e631f5d53f699703279477f913a753c53df51a1d8508",
+    "source_all_shards_and_tokenizer_verified": true
+  },
+  "launcher_limitation": {
+    "command": "/home/kriday/.local/bin/pytest --version",
+    "exit_code": 127,
+    "reason": "bad interpreter: /home/kriday/Applications/Synara-1.0.7-x86_64.AppImage does not exist",
+    "scope": "reproduced local launcher fault; original historical full-suite traceback unavailable; no tests weakened and no global launcher modified"
+  },
+  "gpu_evidence": "parity.json, resume.json, probe.json and phases.json; not the locally skipped GPU pytest cases",
+  "protected_checkouts": "preserved-checkouts.json",
+  "suite_total": {
+    "passed": 248,
+    "skipped": 2,
+    "scope": "all pytest files covered across the main, cache and wiring invocations, each exit 0"
+  }
+}

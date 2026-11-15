@@ -1,0 +1,39 @@
+{
+  "gpu": "Tesla T4",
+  "deterministic": {
+    "False": {
+      "weights": {
+        "bitwise_equal": true,
+        "max_abs": 0.0,
+        "differing_tensors": 0
+      },
+      "losses_equal": true,
+      "grad_norms_equal": true,
+      "losses": [
+        10.6796875,
+        9.956379890441895
+      ],
+      "grad_norms": [
+        107.255615234375,
+        26.058923721313477
+      ]
+    },
+    "True": {
+      "weights": {
+        "bitwise_equal": true,
+        "max_abs": 0.0,
+        "differing_tensors": 0
+      },
+      "losses_equal": true,
+      "grad_norms_equal": true,
+      "losses": [
+        10.6796875,
+        9.956379890441895
+      ],
+      "grad_norms": [
+        107.25584411621094,
+        26.056230545043945
+      ]
+    }
+  }
+}

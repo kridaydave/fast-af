@@ -1,0 +1,113 @@
+[
+  {
+    "scale": 1,
+    "amp": false,
+    "loss": -0.21048849821090698,
+    "input_grad_finite": true,
+    "input_grad_max": 0.013757182285189629,
+    "unscaled_input_grad_max": 0.013757182285189629,
+    "bad_params": [],
+    "param_max": 1.46479070186615
+  },
+  {
+    "scale": 8,
+    "amp": false,
+    "loss": -0.21048849821090698,
+    "input_grad_finite": true,
+    "input_grad_max": 0.013757182285189629,
+    "unscaled_input_grad_max": 0.0017196477856487036,
+    "bad_params": [],
+    "param_max": 1.46479070186615
+  },
+  {
+    "scale": 32,
+    "amp": false,
+    "loss": -0.21048849821090698,
+    "input_grad_finite": true,
+    "input_grad_max": 0.013757182285189629,
+    "unscaled_input_grad_max": 0.0004299119464121759,
+    "bad_params": [],
+    "param_max": 1.46479070186615
+  },
+  {
+    "scale": 256,
+    "amp": false,
+    "loss": -0.21048849821090698,
+    "input_grad_finite": true,
+    "input_grad_max": 0.013757182285189629,
+    "unscaled_input_grad_max": 5.373899330152199e-05,
+    "bad_params": [],
+    "param_max": 1.46479070186615
+  },
+  {
+    "scale": 8192,
+    "amp": false,
+    "loss": -0.21048849821090698,
+    "input_grad_finite": true,
+    "input_grad_max": 0.013757182285189629,
+    "unscaled_input_grad_max": 1.679343540672562e-06,
+    "bad_params": [],
+    "param_max": 1.46479070186615
+  },
+  {
+    "scale": 1,
+    "amp": true,
+    "loss": -0.21026261150836945,
+    "input_grad_finite": true,
+    "input_grad_max": 0.01374979130923748,
+    "unscaled_input_grad_max": 0.01374979130923748,
+    "bad_params": [],
+    "param_max": 1.46484375
+  },
+  {
+    "scale": 8,
+    "amp": true,
+    "loss": -0.21026261150836945,
+    "input_grad_finite": true,
+    "input_grad_max": 0.10999833047389984,
+    "unscaled_input_grad_max": 0.01374979130923748,
+    "bad_params": [],
+    "param_max": 1.46484375
+  },
+  {
+    "scale": 32,
+    "amp": true,
+    "loss": -0.21026261150836945,
+    "input_grad_finite": true,
+    "input_grad_max": 0.43999332189559937,
+    "unscaled_input_grad_max": 0.01374979130923748,
+    "bad_params": [],
+    "param_max": 1.46484375
+  },
+  {
+    "scale": 256,
+    "amp": true,
+    "loss": -0.21026261150836945,
+    "input_grad_finite": true,
+    "input_grad_max": 3.519946575164795,
+    "unscaled_input_grad_max": 0.01374979130923748,
+    "bad_params": [],
+    "param_max": 1.46484375
+  },
+  {
+    "scale": 8192,
+    "amp": true,
+    "loss": -0.21026261150836945,
+    "input_grad_finite": false,
+    "input_grad_max": null,
+    "unscaled_input_grad_max": null,
+    "bad_params": [
+      "A_log",
+      "dt_bias",
+      "q_proj.weight",
+      "k_proj.weight",
+      "v_proj.weight",
+      "a_proj.weight",
+      "b_proj.weight",
+      "convs.0.weight",
+      "convs.1.weight",
+      "convs.2.weight"
+    ],
+    "param_max": NaN
+  }
+]
