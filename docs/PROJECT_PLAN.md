@@ -164,7 +164,42 @@ Pin source, backend, environment, data and tokenizer: a runtime reset must not
 silently change the resume configuration. Checkpoint retention/upload and final
 two-T4 resume qualification remain prerequisites for a long run.
 
-### Provisional pretraining duration on two T4s
+### Efficient D1 supervision and its budget
+
+The [all-block implementation](D1_SUPERVISION.md) now shares differentiable clean
+prefixes across all noisy blocks. The [real single-T4 screen](../.verify/d1-dense/README.md)
+measured **1,473 scored targets/s** at micro-batch 2 and global batch 64, versus
+246 for the frontier baseline, approximately **6.0× supervision throughput**.
+Peak allocation was **7.58 GiB**. Micro 4 reached 1,586 targets/s but used 13.15
+GiB, exceeding the existing 85% device-memory safety margin; select micro 2.
+Actual mixed-precision CPU-reference small-hybrid gradients, full-model
+context-1024 cache parity and full-model killed-process resume passed. The local
+suite passed 299 tests with two GPU-only skips. These are short infrastructure
+checks, not trained-model quality or production-throughput qualification.
+
+Keep the weekly allowance fixed and budget learning from scored targets as well
+as consumed contexts. Using the measured selected rate, an **unmeasured** 1.5×
+effective two-T4 speedup and 30% overhead relative to training time, 30 runtime
+hours projects to about **370M consumed tokens and 184M scored targets**. Actual
+dense two-T4 speed, memory and process-resume remain unmeasured. Dense
+validation/checkpoint costs also need measurement. See the
+[explicit scenarios](../.verify/d1-dense/budget-scenarios.json).
+
+The old 31.5-hour estimate for 2B consumed frontier tokens does not budget the
+new supervision. At the same illustrative assumptions, 2B consumed dense tokens
+projects to about **162 runtime hours**. It supplies far more supervised targets,
+but that is not a convergence or quality guarantee. Use a bounded matched-compute
+learning comparison, including a conventional autoregressive baseline, before
+choosing the architecture or claiming sufficient pretraining. The corpus and
+training volume for a useful general base remain open.
+
+### Historical frontier timing scenarios on two T4s
+
+The new [all-block supervision candidate](D1_SUPERVISION.md) shares differentiable
+clean prefixes and scores noisy targets in every block. Its runtime and learning
+progress must be budgeted from its own measurements. The following timing
+scenarios apply **only to the original sampled-frontier objective**. They do not
+estimate the new candidate or establish adequate pretraining.
 
 The token target for the general base is **not selected**. The following are
 illustrative consumption budgets for the fixed 109.1M-parameter D1, not a
@@ -217,13 +252,18 @@ automatically covered by one base-pretrain estimate.
 2. Choose broad-base sources, license/provenance checks, mixture and tokenizer.
    Include general language, multiple code languages, reasoning and technical
    material. Freeze clean splits and contamination controls before packing.
-3. Freeze model size/architecture and a **separate token or attempt budget** from
+3. Qualify supervision efficiency first. The all-block D1 candidate shares clean
+   prefixes and preserves block visibility, while the old frontier sampler is
+   retained for controlled comparisons. Measure scored targets/s, memory and
+   held-out learning at matched compute. Complete actual two-T4 dense gradient,
+   timing and resume checks before using it for the base.
+   Freeze model size/architecture and a **separate token or attempt budget** from
    measured compute. The current D1 timing is a reference; changed data, context,
    architecture, batch or objective may require a new bounded probe.
-4. Select the measured T4 configuration and freeze its micro-batch/frontier
-   grouping. A global micro-batch of 8 on two GPUs preserves the single-GPU
-   grouping; 16 changes the number of frontier draws per update and needs
-   requalification. Implement weekly Kaggle runtime accounting and checkpoint
+4. Select the measured T4 configuration and freeze supervision mode, global
+   batch and micro-batch. Frontier grouping and all-block mask draws depend on
+   batching and need requalification when changed. Choose dense micro-batch
+   from actual peak memory rather than inheriting the frontier value of 8. Implement weekly Kaggle runtime accounting and checkpoint
    retention/upload. Persist run progress across restarts, but debit quota to
    the provider's current weekly window. Include validation, transfers and
    failed work; refresh the allowance after the provider reset. Refuse a stage

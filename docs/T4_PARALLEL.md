@@ -1,5 +1,11 @@
 # D1 on one Kaggle runtime with two T4s
 
+For the new shared-prefix training path, see [D1 supervision](D1_SUPERVISION.md).
+Pass `--d1-supervision all-blocks` to training and `--supervision all-blocks`
+to the benchmark and parallel checker. The old measurements below remain
+frontier-only. Dense two-T4 timing and resume need separate qualification.
+
+
 The model remains **109,137,632 parameters**, with 16 layers, context 1024,
 32-token blocks and a global batch of 64 sequences. Data volume is separate
 from parameter count. The existing Python-heavy training-v1 bundle is an

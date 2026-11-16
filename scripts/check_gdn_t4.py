@@ -183,7 +183,7 @@ def full_parity():
     return results
 
 
-def resume_check(root):
+def resume_check(root, supervision='frontier'):
     source=Path(__file__).resolve().parent
     bundle=root/'src'/'probe-bundle'
     base=[sys.executable,'-u',str(source/'train_diffusion.py'),'--bundle',str(bundle),
@@ -191,6 +191,8 @@ def resume_check(root):
           '--amp-init-scale',str(AMP_INIT_SCALE),
           '--steps',str(RESUME_STEPS),'--warmup','1','--batch-size','1','--grad-accum','1',
           '--checkpoint-every','3','--eval-every','3','--eval-batches','1','--verify-hashes']
+    if supervision != 'frontier':
+        base += ['--d1-supervision', supervision]
     if FUSED_OPTIMIZER:
         base += ['--fused-optimizer']
     def run(name,extra=()):

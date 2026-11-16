@@ -1,0 +1,41 @@
+{
+  "verified_byte_identical_before_deduplication": true,
+  "measured_scripts": [
+    {
+      "path": "scripts/check_d1_dense.py",
+      "sha256": "ee01e5b20ee70b98765e54c6c0266f7bf3a858ef8633a7315c61131fff7390d6",
+      "git_blob": "65800b69879bbcb41d57d76693e579dde14af1df"
+    },
+    {
+      "path": "scripts/distributed_training.py",
+      "sha256": "bbbe99f349a19a336c9db86d1b4e1b32175f291f18fb54fdb147ea0ee27e5603",
+      "git_blob": "26dfdd64d61a1a1022811b5fb7a9bf7329370d45"
+    },
+    {
+      "path": "scripts/check_d1_parallel.py",
+      "sha256": "9af5540127d1f7d33335c462f143a6797b0625f98d753a19ab3bc4a4c34c90b4",
+      "git_blob": "b32b9100dc789baf7d9c5d1aa864c098900bc559"
+    },
+    {
+      "path": "scripts/check_gdn_t4.py",
+      "sha256": "34c6b7e7f23a00bddc8393ca7691b6146af1c392c1ac759f760092360fac7364",
+      "git_blob": "a75eadd2a3deb4ebc551f16248c1efc708e25827"
+    },
+    {
+      "path": "scripts/train_diffusion.py",
+      "sha256": "9ad59cd135488eb11a92559cb3f27bfbe9e43c6d91a65c3ad535aed7cfa745da",
+      "git_blob": "039f7b084d7e5838d9d3b6f9dbd9e6b85bdc43a8"
+    },
+    {
+      "path": "scripts/benchmark_d1_parallel.py",
+      "sha256": "0c37859c74117e05759c95c9e3db0e6e03b5a122aa4aa3347ba2add75d6cc0d3",
+      "git_blob": "1f2a646fbb94688c7573eecdadf7b0dc581ab264"
+    },
+    {
+      "path": "scripts/d1_model.py",
+      "sha256": "5bc247634a9f12b5bfb1b597e3619c37b671971329657d8f132d1121fd4ae378",
+      "git_blob": "a89980c790f6bfc6e3e31d3b47e9618648583f20"
+    }
+  ],
+  "recovery": "Each git_blob is the delivered source blob, retained by the implementation commit. Raw GPU reports also include source_sha256."
+}

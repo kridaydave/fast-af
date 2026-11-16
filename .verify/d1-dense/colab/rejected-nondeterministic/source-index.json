@@ -1,0 +1,22 @@
+{
+  "base": "delivered source Git blobs",
+  "patch": "source.patch",
+  "recovery": "Restore base_git_blob at path in an isolated temporary directory, then git apply --unidiff-zero source.patch. Recovery was verified byte-for-byte.",
+  "scripts": [
+    {
+      "path": "scripts/train_diffusion.py",
+      "measured_sha256": "49f1b4a45a8c75950e8b769626bff025a63e87deea8df6d000fbf22e47b2286f",
+      "base_git_blob": "039f7b084d7e5838d9d3b6f9dbd9e6b85bdc43a8"
+    },
+    {
+      "path": "scripts/benchmark_d1_parallel.py",
+      "measured_sha256": "7a45fea8a1847055295352146f4fc28260415c32be10356dc0b6161ee52c6464",
+      "base_git_blob": "1f2a646fbb94688c7573eecdadf7b0dc581ab264"
+    },
+    {
+      "path": "scripts/d1_model.py",
+      "measured_sha256": "86c03bfb10e25793739d05bb4728acb997d206ff966524e196d7f7e78292ef5e",
+      "base_git_blob": "a89980c790f6bfc6e3e31d3b47e9618648583f20"
+    }
+  ]
+}

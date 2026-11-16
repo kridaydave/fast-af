@@ -1,0 +1,57 @@
+[
+  {
+    "removed": "colab/frontier-micro8.log",
+    "identical_preserved": "colab/scan32-screen/frontier-micro8.log",
+    "sha256": "f56bc8edc352f9cd2abbb2701ca3933346c6396a97bc54f73bbd089b6a00a199"
+  },
+  {
+    "removed": "colab/dense-resume.log",
+    "identical_preserved": "colab/rejected-nondeterministic/dense-resume.log",
+    "sha256": "9fbc5fdfb1abae87a58e32a1de898662edafbc7e4ebf439a1ada6aa2bd1b2507"
+  },
+  {
+    "removed": "colab/chunk-tc-parity.json",
+    "identical_preserved": "colab/rejected-nondeterministic/chunk-tc-parity.json",
+    "sha256": "aa3b9089cd4b39f1dc460fd0a43570ee44b61009e24f08e6b1138c20a6884de5"
+  },
+  {
+    "removed": "colab/frontier-micro8.json",
+    "identical_preserved": "colab/scan32-screen/frontier-micro8.json",
+    "sha256": "3ec03dc1c5b36a8c69e2f4d41a0e0ef43fac805952d855fa88b7daa07a0b2f71"
+  },
+  {
+    "removed": "colab/chunk-parity.log",
+    "identical_preserved": "colab/rejected-nondeterministic/chunk-parity.log",
+    "sha256": "8e45028f03c9bd4418f9c4c1540d076762a680ea4850f182c8e00c171b5ef738"
+  },
+  {
+    "removed": "colab/chunk-tc-parity.log",
+    "identical_preserved": "colab/rejected-nondeterministic/chunk-tc-parity.log",
+    "sha256": "7e2032fe4212726b40b15da0aef38ec4aa168e207304d0cf71a6ca0c0f6d2817"
+  },
+  {
+    "removed": "colab/dense-resume-det.log",
+    "identical_preserved": "colab/scan32-screen/dense-resume-det.log",
+    "sha256": "5d00943c76259d2434c007c1e754e62990002da0f66cfe0c62a64f899c54caf5"
+  },
+  {
+    "removed": "colab/dense-resume-det.json",
+    "identical_preserved": "colab/scan32-screen/dense-resume-det.json",
+    "sha256": "b1991647894303655d44832670d1d0af94b6d5f4b1eed2cbfe0aa52c2b03adde"
+  },
+  {
+    "removed": "colab/all-blocks-micro1.log",
+    "identical_preserved": "colab/scan32-screen/all-blocks-micro1.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "removed": "colab/chunk-parity.json",
+    "identical_preserved": "colab/rejected-nondeterministic/chunk-parity.json",
+    "sha256": "0430f3deff27ce2478fcb2b8e80604556a4814cd7f31ce26bfa9829cd1bf368b"
+  },
+  {
+    "removed": "colab/dense-resume.json",
+    "identical_preserved": "colab/rejected-nondeterministic/dense-resume.json",
+    "sha256": "50762709f0880fcfd8f492514bafdf422d52b2f48f8fad31d2396909edc57207"
+  }
+]

@@ -49,8 +49,14 @@ class DistributedTraining:
     def sync_context(self, model, final_micro):
         return model.no_sync() if self.world_size > 1 and not final_micro else nullcontext()
 
-    def loss(self, model, inputs, targets, mask, block_size):
+    def loss(self, model, inputs, targets, mask, block_size, *, clean_inputs=None):
         """Return a local SUM; DDP averages gradients, so caller multiplies by world size."""
+        if clean_inputs is not None:
+            inputs, targets, mask, clean_inputs = partition_batch(inputs, targets, mask, self.rank, self.world_size,
+                                                                 clean_inputs=clean_inputs)
+            logits = model(inputs, logits_mask=mask, clean_inputs=clean_inputs)
+            # Empty local masks still build a differentiable zero for DDP.
+            return F.cross_entropy(logits, targets[mask], reduction='sum')
         part = partition_batch(inputs, targets, mask, self.rank, self.world_size)
         inputs, targets, mask = part
         # A whole active block avoids a dynamic nonzero and supports an all-EOS
@@ -93,8 +99,9 @@ class DistributedTraining:
             self.owns_group = False
 
 
-def partition_batch(inputs, targets, mask, rank, world_size):
+def partition_batch(inputs, targets, mask, rank, world_size, *, clean_inputs=None):
     if inputs.shape[0] % world_size or not 0 <= rank < world_size:
         raise ValueError('global micro-batch must divide evenly across ranks')
     size = inputs.shape[0] // world_size
-    return tuple(x[rank * size:(rank + 1) * size] for x in (inputs, targets, mask))
+    tensors = (inputs, targets, mask) if clean_inputs is None else (inputs, targets, mask, clean_inputs)
+    return tuple(x[rank * size:(rank + 1) * size] for x in tensors)

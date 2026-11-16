@@ -89,7 +89,7 @@ def test_backend_and_distributed_guards(monkeypatch):
 def test_default_config_hash_preserves_existing_checkpoints():
     cfg = TrainConfig(bundle='fixture', out='ignored')
     legacy = {k: v for k, v in asdict(cfg).items()
-              if k not in set(CONFIG_HASH_EXCLUDE) | {'world_size', 'fused_optimizer'}}
+              if k not in set(CONFIG_HASH_EXCLUDE) | {'world_size', 'fused_optimizer', 'd1_supervision'}}
     assert config_hash_of(cfg) == digest(canonical(legacy).encode())
     assert config_hash_of(cfg) != config_hash_of(replace(cfg, world_size=2))
     assert config_hash_of(cfg) != config_hash_of(replace(cfg, fused_optimizer=True))

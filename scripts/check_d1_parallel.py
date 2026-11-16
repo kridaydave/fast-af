@@ -22,7 +22,7 @@ from scripts.check_gdn_t4 import comparison
 from scripts.train_diffusion import load_checkpoint
 
 
-def gradient_check(out, backend):
+def gradient_check(out, backend, supervision='frontier'):
     d = DistributedTraining(2, 'cuda')
     try:
         assert torch.cuda.get_device_name(d.device) == 'Tesla T4'
@@ -40,10 +40,11 @@ def gradient_check(out, backend):
         mask[2, -2:] = True
         mask[3, -16:] = True
         inputs = targets.masked_fill(mask, 0)
+        clean = targets if supervision == 'all-blocks' else None
         # Rank 0 has no scored tokens. Both must still backpropagate/reduce.
         with torch.autocast('cuda', dtype=torch.float16):
-            expected = F.cross_entropy(reference(inputs, logits_mask=mask), targets[mask])
-            summed = d.loss(parallel, inputs, targets, mask, 32)
+            expected = F.cross_entropy(reference(inputs, logits_mask=mask, clean_inputs=clean), targets[mask])
+            summed = d.loss(parallel, inputs, targets, mask, 32, clean_inputs=clean)
         expected.backward()
         (summed * (2 / int(mask.sum()))).backward()
         metrics = {}
@@ -53,7 +54,7 @@ def gradient_check(out, backend):
         actual_loss = d.loss_sum(summed.detach()) / int(mask.sum())
         assert abs(float(expected.detach()) - actual_loss) < 0.003
         if d.rank == 0:
-            Path(out).write_text(json.dumps({'status': 'PASS', 'backend': backend,
+            Path(out).write_text(json.dumps({'status': 'PASS', 'backend': backend, 'supervision': supervision,
                 'params': sum(p.numel() for p in model.parameters()), 'zero_scored_rank': True,
                 'masked_ce_reference': float(expected.detach()), 'masked_ce_distributed': actual_loss,
                 'parameter_gradients': metrics}, indent=2) + '\n')
@@ -61,7 +62,7 @@ def gradient_check(out, backend):
         d.close()
 
 
-def resume_check(root, backend):
+def resume_check(root, backend, supervision='frontier'):
     root = Path(root)
     script = Path(__file__).with_name('train_diffusion.py')
     base = [sys.executable, '-m', 'torch.distributed.run', '--standalone', '--nproc-per-node=2',
@@ -70,6 +71,8 @@ def resume_check(root, backend):
             '--world-size', '2', '--batch-size', '2', '--grad-accum', '1', '--steps', '6',
             '--warmup', '2', '--lr', '0.0001', '--seed', '1001', '--checkpoint-every', '3',
             '--eval-every', '3', '--eval-batches', '1', '--fused-optimizer']
+    if supervision != 'frontier':
+        base += ['--d1-supervision', supervision]
     reports = []
     started = time.monotonic()
     for name, resume, kill in [('full', None, False), ('interrupted', None, True),
@@ -117,7 +120,7 @@ def resume_check(root, backend):
             metric = comparison(value, right['optimizer']['state'][index][key], 0.003, 1e-5,
                                 f'optimizer {index} {key}')
             optimizer_max = max(optimizer_max, metric['max_abs'])
-    result = {'status': 'PASS', 'backend': backend, 'world_size': 2, 'params': sum(v.numel() for v in left['model'].values()),
+    result = {'status': 'PASS', 'backend': backend, 'supervision': supervision, 'world_size': 2, 'params': sum(v.numel() for v in left['model'].values()),
               'steps': 6, 'kill_after': 4, 'resume_from': 3, 'successful_updates': 6,
               'loader_scheduler_scaler_rng_equal': True, 'sampled_eval_on_rank0': True,
               'loss_max_abs_error': loss_error, 'weight_metrics': weights,
@@ -134,12 +137,13 @@ def main():
     p.add_argument('--phase', choices=('gradients', 'resume'), required=True)
     p.add_argument('--root', type=Path, required=True)
     p.add_argument('--backend', choices=('chunk', 'chunk-tc'), default='chunk')
+    p.add_argument('--supervision', choices=('frontier', 'all-blocks'), default='frontier')
     p.add_argument('--out', type=Path, required=True)
     a = p.parse_args()
     if a.phase == 'gradients':
-        gradient_check(a.out, a.backend)
+        gradient_check(a.out, a.backend, a.supervision)
     else:
-        a.out.write_text(json.dumps(resume_check(a.root, a.backend), indent=2) + '\n')
+        a.out.write_text(json.dumps(resume_check(a.root, a.backend, a.supervision), indent=2) + '\n')
 
 
 if __name__ == '__main__':

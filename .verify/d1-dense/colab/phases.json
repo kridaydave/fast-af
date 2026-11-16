@@ -1,0 +1,32 @@
+[
+  {
+    "name": "chunk-parity-final",
+    "exit_code": 0,
+    "elapsed_seconds": 13.156317183000056
+  },
+  {
+    "name": "chunk-tc-parity-final",
+    "exit_code": 0,
+    "elapsed_seconds": 25.968628541000044
+  },
+  {
+    "name": "dense-resume-final",
+    "exit_code": 0,
+    "elapsed_seconds": 145.38070450400005
+  },
+  {
+    "name": "frontier-micro8-final",
+    "exit_code": 0,
+    "elapsed_seconds": 172.28127148399994
+  },
+  {
+    "name": "all-blocks-micro2-final",
+    "exit_code": 0,
+    "elapsed_seconds": 268.07983324399993
+  },
+  {
+    "name": "all-blocks-micro4-final",
+    "exit_code": 0,
+    "elapsed_seconds": 359.344142229
+  }
+]

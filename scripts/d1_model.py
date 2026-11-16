@@ -131,6 +131,14 @@ def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
                         decay: torch.Tensor, beta: torch.Tensor,
                         initial_state: torch.Tensor | None = None,
                         chunk_size: int = 128, *, tensor_cores: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+    """Differentiable chunked delta recurrence with FP32 state and solve."""
+    output, final, _ = _gated_delta_chunked(q, k, v, decay, beta, initial_state,
+                                           chunk_size, tensor_cores=tensor_cores)
+    return output, final
+
+
+def _gated_delta_chunked(q, k, v, decay, beta, initial_state=None,
+                         chunk_size=128, *, tensor_cores=False, collect_states=False, state_stride=None):
     """Parallelize each chunk with a unit-lower-triangular solve, using PyTorch.
 
     Same recurrence, normalized q/k and FP32 state as gated_delta_reference.
@@ -149,6 +157,9 @@ def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         batch, heads, length, key_dim = q.shape
         value_dim = v.shape[-1]
         chunk_size = min(chunk_size, 1 << (length - 1).bit_length())
+        stride = chunk_size if state_stride is None else state_stride
+        if type(stride) is not int or stride < 1 or chunk_size % stride:
+            raise ValueError('state_stride must divide chunk_size')
         padding = (-length) % chunk_size
         q, k, v = (F.pad(x, (0, 0, 0, padding)) for x in (q, k, v))
         decay, beta = (F.pad(x, (0, padding)) for x in (decay, beta))
@@ -174,18 +185,38 @@ def gated_delta_chunked(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         projected_queries = queries * absolute_decay[..., None]
         end_keys = (k * (cumulative[..., -1:] - cumulative).exp()[..., None]).transpose(-1, -2)
         end_decay = absolute_decay[..., -1, None, None]
-        outputs = []
+        # Recover interior block entry states from the same solved updates.
+        # This keeps the clean scan at 128 tokens instead of launching a scan
+        # step for every 32-token block. Mask BEFORE exp for strong decay.
+        if collect_states and stride < chunk_size:
+            ends = torch.arange(stride - 1, chunk_size - 1, stride, device=q.device)
+            visible = torch.arange(chunk_size, device=q.device)[None, :] <= ends[:, None]
+            relative = cumulative[..., ends, None] - cumulative[..., None, :]
+            relative = relative.masked_fill(~visible, -torch.inf).exp()
+            interior_keys = (k.unsqueeze(-3) * relative[..., None]).transpose(-1, -2)
+            interior_decay = absolute_decay[..., ends, None, None]
+            interiors = zip(interior_keys.unbind(2), interior_decay.unbind(2))
+        else:
+            interiors = iter(())
+        outputs, states = [], []
         # Unbind once: indexing the full tensors inside the loop makes backward
         # zero and accumulate full-sized slice gradients for every chunk.
         pieces = zip(*(x.unbind(2) for x in
                        (projected_queries, attention, end_keys, end_decay, base_values, state_weights)))
         for queries, scores, keys, decay_factor, values, weights in pieces:
+            if collect_states:
+                states.append(state)
             updates = values - mm(weights, state)
+            if collect_states and stride < chunk_size:
+                middle_keys, middle_decay = next(interiors)
+                expanded = updates.unsqueeze(2).expand(*middle_keys.shape[:-2], chunk_size, value_dim)
+                middle = state.unsqueeze(2) * middle_decay + mm(middle_keys, expanded)
+                states.extend(middle.unbind(2))
             output = mm(queries, state) + mm(scores, updates)
             outputs.append(output)
             state = state * decay_factor + mm(keys, updates)
         output = torch.cat(outputs, dim=2)[:, :, :length].transpose(1, 2).contiguous()
-        return output, state
+        return output, state, states
 
 
 def backend_info(backend: str) -> dict[str, str]:
@@ -269,20 +300,12 @@ class GatedDeltaNet(nn.Module):
         self.dt_bias = nn.Parameter(dt + torch.log(-torch.expm1(-dt)))
 
     def forward(self, x, state=None, offset=0, use_cache=False):
-        c = self.cfg
         values, conv_states = [], []
         for index, (projection, conv) in enumerate(zip((self.q_proj, self.k_proj, self.v_proj), self.convs)):
             output, tail = conv(projection(x), None if state is None else state.conv[index])
             values.append(output)
             conv_states.append(tail)
-        q, k = [t.reshape(*x.shape[:2], c.gdn_heads, c.gdn_key_dim) for t in values[:2]]
-        v = values[2].reshape(*x.shape[:2], c.gdn_heads, c.gdn_value_dim)
-        # Keep normalization/decay in FP32, including under fp16 autocast.
-        with torch.autocast(device_type=x.device.type, enabled=False):
-            q = F.normalize(q.float(), dim=-1, eps=1e-6)
-            k = F.normalize(k.float(), dim=-1, eps=1e-6)
-            decay = -self.A_log.float().exp() * F.softplus(self.a_proj(x.float()) + self.dt_bias.float())
-            beta = self.b_proj(x.float()).sigmoid()
+        q, k, v, decay, beta = self._recurrence_inputs(x, values)
         initial = None if state is None else state.recurrent
         if self.backend == 'fla':
             if x.device.type != 'cuda' or v.dtype != torch.float16:
@@ -298,14 +321,81 @@ class GatedDeltaNet(nn.Module):
                                                 tensor_cores=self.backend == 'chunk-tc')
         else:
             output, final = gated_delta_reference(q, k, v, decay, beta, initial)
+        cache = GDNState(final, tuple(conv_states)) if use_cache else None
+        return self._output(x, output), cache
+
+    def _recurrence_inputs(self, x, values) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        c = self.cfg
+        q, k = [t.reshape(*x.shape[:2], c.gdn_heads, c.gdn_key_dim) for t in values[:2]]
+        v = values[2].reshape(*x.shape[:2], c.gdn_heads, c.gdn_value_dim)
+        # Keep normalization/decay in FP32, including under fp16 autocast.
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            q = F.normalize(q.float(), dim=-1, eps=1e-6)
+            k = F.normalize(k.float(), dim=-1, eps=1e-6)
+            decay = -self.A_log.float().exp() * F.softplus(self.a_proj(x.float()) + self.dt_bias.float())
+            beta = self.b_proj(x.float()).sigmoid()
+        return q, k, v, decay, beta
+
+    def _output(self, x, output):
+        c = self.cfg
         gate = self.g_proj(x).reshape(*x.shape[:2], c.gdn_heads, c.gdn_value_dim)
         # Same-dtype FP32 norm avoids Torch 2.11's expensive mixed-dtype fallback.
         # Keep FP32 residuals/norms: FP16 residuals failed cached/full parity on T4.
         norm_input = output if self.backend == 'chunk-tc' else output.to(gate.dtype)
         output = self.output_norm(norm_input) * F.silu(gate)
-        result = self.o_proj(output.flatten(-2))
-        cache = GDNState(final, tuple(conv_states)) if use_cache else None
-        return result, cache
+        return self.o_proj(output.flatten(-2))
+
+    def forward_all_blocks(self, clean, noisy):
+        """Fork each noisy block from its differentiable CLEAN entry state.
+
+        No noisy state is shared across blocks. Entry convolution histories use
+        raw clean projections, exactly as a normal cached prefix would.
+        """
+        if self.backend == 'fla':
+            raise ValueError('all-block supervision supports torch, chunk and chunk-tc backends')
+        batch, length, channels = clean.shape
+        block = self.cfg.block_size
+        count = length // block
+        noisy_blocks = noisy.reshape(batch * count, block, channels)
+        clean_values, noisy_values = [], []
+        for projection, conv in zip((self.q_proj, self.k_proj, self.v_proj), self.convs):
+            assert isinstance(conv, CausalConv)
+            raw = projection(clean)
+            clean_values.append(conv(raw)[0])
+            width = conv.width - 1
+            history = F.pad(raw.transpose(1, 2), (width, 0))
+            if width:
+                entries = history.unfold(-1, width, block)[:, :, :count]
+                entries = entries.permute(0, 2, 1, 3).reshape(batch * count, raw.shape[-1], width)
+            else:
+                entries = raw.new_empty(batch * count, raw.shape[-1], 0)
+            noisy_values.append(conv(projection(noisy_blocks), entries)[0])
+        clean_args = self._recurrence_inputs(clean, clean_values)
+        if self.backend == 'torch':
+            state = clean.new_zeros(batch, self.cfg.gdn_heads, self.cfg.gdn_key_dim,
+                                    self.cfg.gdn_value_dim, dtype=torch.float32)
+            outputs, entries = [], []
+            for index in range(count):
+                entries.append(state)
+                q, k, v, decay, beta = [value[:, index * block:(index + 1) * block] for value in clean_args]
+                output, state = gated_delta_reference(q, k, v, decay, beta, state)
+                outputs.append(output)
+            clean_output = torch.cat(outputs, dim=1)
+        else:
+            if self.backend == 'chunk-tc' and (clean.device.type != 'cuda' or clean_values[2].dtype != torch.float16):
+                raise ValueError('chunk-tc requires CUDA fp16 autocast')
+            clean_output, _, entries = _gated_delta_chunked(
+                *clean_args, chunk_size=max(128, block) if block & (block - 1) == 0 else block,
+                tensor_cores=self.backend == 'chunk-tc', collect_states=True, state_stride=block)
+        initial = torch.stack(entries[:count], dim=1).flatten(0, 1)
+        noisy_args = self._recurrence_inputs(noisy_blocks, noisy_values)
+        if self.backend == 'torch':
+            noisy_output, _ = gated_delta_reference(*noisy_args, initial)
+        else:
+            noisy_output, _ = gated_delta_chunked(*noisy_args, initial, chunk_size=block,
+                                                  tensor_cores=self.backend == 'chunk-tc')
+        return (self._output(clean, clean_output),
+                self._output(noisy_blocks, noisy_output).reshape(batch, length, channels))
 
 
 class BlockAttention(nn.Module):
@@ -330,6 +420,24 @@ class BlockAttention(nn.Module):
         output = F.scaled_dot_product_attention(q, k, v, attn_mask=allowed, enable_gqa=True)
         result = self.o_proj(output.transpose(1, 2).reshape(*x.shape[:2], c.d_model))
         return result, AttentionState(k, v) if use_cache else None
+
+    def forward_all_blocks(self, clean, noisy):
+        c = self.cfg
+        batch, length, _ = clean.shape
+        # Clean queries see <= their own block. Noisy queries see strictly
+        # earlier clean blocks and ONLY their own noisy block.
+        both = torch.cat((clean, noisy), dim=1)
+        q = self.q_proj(both).reshape(batch, 2 * length, c.query_heads, c.head_dim).transpose(1, 2)
+        k, v = [proj(both).reshape(batch, 2 * length, c.kv_heads, c.head_dim).transpose(1, 2)
+                for proj in (self.k_proj, self.v_proj)]
+        blocks = torch.arange(length, device=clean.device) // c.block_size
+        earlier = blocks[None, :] < blocks[:, None]
+        same = blocks[None, :] == blocks[:, None]
+        allowed = torch.cat((torch.cat((earlier | same, torch.zeros_like(same)), dim=1),
+                             torch.cat((earlier, same), dim=1)), dim=0)
+        output = F.scaled_dot_product_attention(q, k, v, attn_mask=allowed, enable_gqa=True)
+        result = self.o_proj(output.transpose(1, 2).reshape(batch, 2 * length, c.d_model))
+        return result[:, :length], result[:, length:]
 
 
 class SwiGLU(nn.Module):
@@ -356,6 +464,13 @@ class D1Block(nn.Module):
         mixed, new_state = self.mixer(self.norm1(x), state, offset, use_cache)
         x = x + mixed
         return x + self.ffn(self.norm2(x)), new_state
+
+    def forward_all_blocks(self, clean, noisy):
+        clean_mix, noisy_mix = self.mixer.forward_all_blocks(self.norm1(clean), self.norm1(noisy))
+        clean, noisy = clean + clean_mix, noisy + noisy_mix
+        both = torch.cat((clean, noisy), dim=1)
+        both = both + self.ffn(self.norm2(both))
+        return both.split(clean.shape[1], dim=1)
 
 
 class D1LM(nn.Module):
@@ -413,7 +528,21 @@ class D1LM(nn.Module):
         return logits, D1Cache(tuple(states), offset + inputs.shape[1]) if use_cache else None
 
     def forward(self, inputs: torch.Tensor, *, logits_mask: torch.Tensor | None = None,
-                logits_last: int | None = None) -> torch.Tensor:
+                logits_last: int | None = None, clean_inputs: torch.Tensor | None = None) -> torch.Tensor:
+        if clean_inputs is not None:
+            if (inputs.ndim != 2 or inputs.shape != clean_inputs.shape or not inputs.shape[0]
+                    or not 0 < inputs.shape[1] <= self.seq_len or inputs.shape[1] % self.cfg.block_size
+                    or logits_last is not None):
+                raise ValueError('all-block supervision requires matching whole-block clean/noisy inputs, without logits_last')
+            if logits_mask is not None and (logits_mask.shape != inputs.shape or logits_mask.dtype != torch.bool):
+                raise ValueError('logits_mask must be boolean with the input shape')
+            clean, noisy = self.tokens(clean_inputs), self.tokens(inputs)
+            for block in self.blocks:
+                assert isinstance(block, D1Block)
+                clean, noisy = block.forward_all_blocks(clean, noisy)
+            if logits_mask is not None:
+                noisy = noisy[logits_mask]
+            return F.linear(self.norm(noisy), self.tokens.weight)
         return self._run(inputs, logits_mask=logits_mask, logits_last=logits_last)[0]
 
     def forward_block(self, inputs: torch.Tensor, cache: D1Cache | None = None) -> tuple[torch.Tensor, D1Cache]:

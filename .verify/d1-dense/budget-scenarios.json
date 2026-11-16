@@ -1,0 +1,48 @@
+{
+  "policy": "30 Kaggle GPU-session runtime hours/week; Colab usage is separate.",
+  "supervision": "all-blocks",
+  "basis": {
+    "file": "colab/all-blocks-micro2-final.json",
+    "status": "PASS",
+    "params": 109137632,
+    "context": 1024,
+    "global_batch": 64,
+    "micro": 2,
+    "deterministic_algorithms": true,
+    "timed_updates": 3,
+    "timed_seconds": 66.18063449299984,
+    "consumed_tokens_per_second": 2970.778408309094,
+    "processed_tokens_per_second": 5941.556816618188,
+    "scored_tokens_per_second": 1473.195304743,
+    "scored_rate_range": [
+      1463.1777815605462,
+      1493.5494051759167
+    ],
+    "peak_allocated_gib": 7.577412128448486,
+    "peak_reserved_gib": 7.818359375,
+    "timed_skips": 0
+  },
+  "overhead_multiplier": 1.3,
+  "overhead_status": "Unmeasured planning assumption, not measured evaluation/checkpoint costs for dense training.",
+  "two_t4_scaling_status": "Unmeasured assumptions; effective scaling relative to this Colab T4 may be lower.",
+  "scenarios": [
+    {
+      "assumed_effective_two_t4_speedup": 1.0,
+      "consumed_tokens_in_30_runtime_hours": 246803129.3056786,
+      "scored_tokens_in_30_runtime_hours": 122388533.00941846,
+      "runtime_hours_for_2B_consumed_tokens": 243.10874894007873
+    },
+    {
+      "assumed_effective_two_t4_speedup": 1.5,
+      "consumed_tokens_in_30_runtime_hours": 370204693.9585179,
+      "scored_tokens_in_30_runtime_hours": 183582799.51412767,
+      "runtime_hours_for_2B_consumed_tokens": 162.07249929338582
+    },
+    {
+      "assumed_effective_two_t4_speedup": 2.0,
+      "consumed_tokens_in_30_runtime_hours": 493606258.6113572,
+      "scored_tokens_in_30_runtime_hours": 244777066.01883692,
+      "runtime_hours_for_2B_consumed_tokens": 121.55437447003936
+    }
+  ]
+}

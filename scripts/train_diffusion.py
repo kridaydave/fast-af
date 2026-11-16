@@ -20,6 +20,7 @@ import platform
 import random
 import subprocess
 from dataclasses import asdict, dataclass, field
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -238,6 +239,7 @@ class ShardLoader:
                 self.position, self.sequence = self.position + 1, 0
                 continue
             take = min(self.batch_size, rows - self.sequence)
+            assert self._memmap is not None
             batch = np.asarray(self._memmap[self.sequence:self.sequence + take], dtype=np.int64)
             self.sequence += take
             if self.sequence >= rows:
@@ -313,7 +315,20 @@ def block_diffusion_mask(targets, block_size, *, min_ratio=0.1, max_ratio=0.9,
     return inputs, loss_mask
 
 
+def all_blocks_diffusion_mask(targets, block_size, *, min_ratio=0.1, max_ratio=0.9, generator=None):
+    """Independent per-row/block masks; clean targets remain a separate stream."""
+    if (targets.ndim != 2 or not targets.shape[0] or not targets.shape[1]
+            or type(block_size) is not int or block_size < 1 or targets.shape[1] % block_size):
+        raise ValueError('sequence length must be divisible by block_size')
+    noisy, mask = diffusion_mask(targets.reshape(-1, block_size), min_ratio=min_ratio,
+                                 max_ratio=max_ratio, generator=generator)
+    return noisy.reshape_as(targets), mask.reshape_as(targets)
+
+
 def corrupt_batch(cfg, targets, generator=None):
+    if cfg.profile == 'd1' and cfg.d1_supervision == 'all-blocks':
+        return all_blocks_diffusion_mask(targets, cfg.d1.block_size, min_ratio=cfg.mask_min,
+                                          max_ratio=cfg.mask_max, generator=generator)
     if cfg.mask_mode == 'blockwise':
         return block_diffusion_mask(targets, cfg.d1.block_size, min_ratio=cfg.mask_min,
                                     max_ratio=cfg.mask_max, generator=generator)
@@ -329,14 +344,14 @@ def masked_cross_entropy(logits, targets, loss_mask, reduction='mean'):
     return F.cross_entropy(logits[loss_mask], targets[loss_mask], reduction=reduction)
 
 
-def model_masked_loss(model, inputs, targets, loss_mask):
+def model_masked_loss(model, inputs, targets, loss_mask, *, clean_inputs=None):
     """Keep prefix computation and gradients, omitting unscored D1 vocabulary rows."""
     if inputs.shape != targets.shape or targets.shape != loss_mask.shape:
         raise ValueError('shape mismatch')
     if not loss_mask.any():
         raise ValueError('empty loss mask')
     if isinstance(model, D1LM):
-        return F.cross_entropy(model(inputs, logits_mask=loss_mask), targets[loss_mask])
+        return F.cross_entropy(model(inputs, logits_mask=loss_mask, clean_inputs=clean_inputs), targets[loss_mask])
     return masked_cross_entropy(model(inputs), targets, loss_mask)
 
 
@@ -418,6 +433,7 @@ class TrainConfig:
     gdn_backend: str = 'torch'
     fused_optimizer: bool = False
     world_size: int = 1
+    d1_supervision: str = 'frontier'
     p1: bool = False
     verify_hashes: bool = False
 
@@ -433,10 +449,16 @@ def config_hash_of(cfg):
         del payload['fused_optimizer']
     if payload['world_size'] == 1:
         del payload['world_size']
+    if payload['d1_supervision'] == 'frontier':
+        del payload['d1_supervision']
     return digest(canonical(payload).encode())
 
 
 def _validate(cfg):
+    if cfg.d1_supervision not in ('frontier', 'all-blocks'):
+        raise ValueError('d1_supervision must be frontier or all-blocks')
+    if cfg.d1_supervision == 'all-blocks' and (cfg.profile != 'd1' or cfg.gdn_backend == 'fla'):
+        raise ValueError('all-block supervision requires D1 with torch, chunk or chunk-tc backend')
     if type(cfg.world_size) is not int or cfg.world_size not in (1, 2):
         raise ValueError('world_size must be 1 or 2')
     if cfg.world_size > 1 and (cfg.profile != 'd1' or cfg.device != 'cuda'
@@ -657,7 +679,7 @@ def restore_rng(payload):
         torch.cuda.set_rng_state_all(rng['cuda'])
 
 
-def evaluate(cfg, model, vocab, seq_len, batches=8, device='cpu'):
+def evaluate(cfg, model, vocab, seq_len, batches: int | None = 8, device='cpu'):
     """Deterministic masked cross-entropy on the validation split.
 
     The value is weighted by masked tokens, not batch means. With batches=None
@@ -687,7 +709,7 @@ def evaluate(cfg, model, vocab, seq_len, batches=8, device='cpu'):
                 frontiers = (range(seq_len // cfg.d1.block_size)
                              if cfg.profile == 'd1' and batches is None else [None])
                 for frontier in frontiers:
-                    if frontier is None:
+                    if cfg.profile != 'd1':
                         inputs, loss_mask = corrupt_batch(cfg, targets, generator)
                     else:
                         inputs, loss_mask = block_diffusion_mask(
@@ -711,7 +733,26 @@ def evaluate(cfg, model, vocab, seq_len, batches=8, device='cpu'):
     return total / count
 
 
+@contextmanager
+def d1_training_execution(supervision, device):
+    """Dense CUDA branches require deterministic reductions for stable resume."""
+    previous = torch.are_deterministic_algorithms_enabled()
+    warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    if supervision == 'all-blocks' and device == 'cuda':
+        os.environ.setdefault('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
+        torch.use_deterministic_algorithms(True)
+    try:
+        yield
+    finally:
+        torch.use_deterministic_algorithms(previous, warn_only=warn_only)
+
+
 def train(cfg, resume=None, log=print):
+    with d1_training_execution(cfg.d1_supervision, cfg.device):
+        return _train_distributed(cfg, resume, log)
+
+
+def _train_distributed(cfg, resume, log):
     _validate(cfg)
     distributed = DistributedTraining(cfg.world_size, cfg.device)
     try:
@@ -770,12 +811,15 @@ def _train(cfg, resume, log, distributed):
         step, tokens_seen = payload['step'], payload['tokens_seen']
         loader.validate_progress(step, cfg.grad_accum, tokens_seen)
         tokens_processed, tokens_scored = payload['tokens_processed'], payload['tokens_scored']
+        processed_limit = tokens_seen * (2 if cfg.d1_supervision == 'all-blocks' else 1)
         if (type(tokens_processed) is not int or type(tokens_scored) is not int
-                or not 0 < tokens_scored <= tokens_processed <= tokens_seen):
+                or not 0 < tokens_scored <= tokens_seen or not tokens_scored <= tokens_processed <= processed_limit
+                or cfg.d1_supervision == 'all-blocks' and tokens_processed != processed_limit):
             raise ValueError('checkpoint processed/scored token counts are inconsistent')
         restore_rng(payload)
         if cfg.world_size > 1:
             distributed.restore_rng(payload['distributed'])
+            assert corruption is not None
             corruption.set_state(payload['corruption_rng'])
         log(f'resumed {resume} at step {step} tokens {tokens_seen}')
     if step >= cfg.steps:
@@ -787,6 +831,7 @@ def _train(cfg, resume, log, distributed):
         json.dumps({**asdict(cfg), 'config_hash': config_hash,
                     'provenance': provenance, 'library_versions': library_versions(),
                     'model_params': params, 'metric': 'masked_ce', 'backend': backend,
+                    'deterministic_algorithms': torch.are_deterministic_algorithms_enabled(),
                     'git_commit': git_commit(),
                     'gpu': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None},
                    indent=2, sort_keys=True) + '\n', encoding='utf-8')
@@ -796,6 +841,7 @@ def _train(cfg, resume, log, distributed):
             config_hash, provenance, tokens_processed, tokens_scored, distributed=cfg.world_size > 1)
         if cfg.world_size > 1:
             payload['distributed'] = distributed.save_rng()
+            assert corruption is not None
             payload['corruption_rng'] = corruption.get_state()
         if distributed.rank == 0:
             save_checkpoint(path, payload)
@@ -811,7 +857,7 @@ def _train(cfg, resume, log, distributed):
             token_total += targets.numel()
             inputs, loss_mask = corrupt_batch(cfg, targets, corruption)
             targets = targets[:, :inputs.shape[1]]
-            processed_total += targets.numel()
+            processed_total += targets.numel() * (2 if cfg.d1_supervision == 'all-blocks' else 1)
             masked = int(loss_mask.sum())
             if not masked:
                 raise ValueError('empty loss mask in global batch')
@@ -823,10 +869,12 @@ def _train(cfg, resume, log, distributed):
             with distributed.sync_context(parallel, index == len(micro) - 1):
                 with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=cfg.amp):
                     if cfg.world_size > 1:
-                        summed = distributed.loss(parallel, inputs, targets, loss_mask, cfg.d1.block_size)
+                        summed = distributed.loss(parallel, inputs, targets, loss_mask, cfg.d1.block_size,
+                                                  clean_inputs=targets if cfg.d1_supervision == 'all-blocks' else None)
                         weighted = summed.float() * (cfg.world_size / masked_total)
                     else:
-                        loss = model_masked_loss(model, inputs, targets, loss_mask)
+                        loss = model_masked_loss(model, inputs, targets, loss_mask,
+                                                 clean_inputs=targets if cfg.d1_supervision == 'all-blocks' else None)
                         summed = loss.float() * masked
                         weighted = summed / masked_total
                 if not distributed.finite(summed):
@@ -905,6 +953,8 @@ def main(argv=None):
     p.add_argument('--fused-optimizer', action='store_true')
     p.add_argument('--world-size', type=int, choices=(1, 2), default=1,
                    help='two ranks via torchrun; batch-size remains the GLOBAL micro-batch')
+    p.add_argument('--d1-supervision', choices=('frontier', 'all-blocks'), default='frontier',
+                   help='all-blocks shares differentiable clean prefixes across every noisy block')
     p.add_argument('--p1', action='store_true')
     p.add_argument('--verify-hashes', action='store_true')
     a = p.parse_args(argv)
@@ -922,7 +972,8 @@ def main(argv=None):
                       weight_decay=a.weight_decay, beta1=a.beta1, beta2=a.beta2,
                       eps=a.eps, threads=a.threads, device=a.device, amp=a.amp,
                       amp_init_scale=a.amp_init_scale,
-                      profile=a.profile, d1=d1, gdn_backend=a.gdn_backend, fused_optimizer=a.fused_optimizer, world_size=a.world_size, p1=a.p1, verify_hashes=a.verify_hashes)
+                      profile=a.profile, d1=d1, gdn_backend=a.gdn_backend, fused_optimizer=a.fused_optimizer,
+                      world_size=a.world_size, d1_supervision=a.d1_supervision, p1=a.p1, verify_hashes=a.verify_hashes)
     try:
         summary = train(cfg, resume=a.resume)
     except (ValueError, OSError, RuntimeError, FloatingPointError) as error:

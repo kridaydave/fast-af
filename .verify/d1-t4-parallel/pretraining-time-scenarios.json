@@ -72,5 +72,10 @@
     "1.5x is a provisional planning assumption; 2x is ideal linear scaling, not a measured bound.",
     "Consumed frontier-objective corpus tokens are not autoregressive loss-token equivalents.",
     "No token volume here establishes sufficient pretraining or authorizes a run."
-  ]
+  ],
+  "supervision": "frontier",
+  "not_valid_for_supervision": [
+    "all-blocks"
+  ],
+  "current_candidate_budget": "See docs/D1_SUPERVISION.md and .verify/d1-dense; these historical scenarios do not budget the all-block candidate."
 }

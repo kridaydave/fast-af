@@ -1,0 +1,20 @@
+[
+  {
+    "path": "/home/kriday/Code/AI/fast-af-boi",
+    "head": "cde26573920c7ae5bd6aab06617952ba282bbde9",
+    "diff_sha256": "33a04ebf577ee77be89083121818d83c9c1c3331c1f267879ca931072526b5f7",
+    "status": " M results_smoke.yaml\n?? g1-baseline.json\n?? g1-candidate.json\n?? g1-comparison.json\n"
+  },
+  {
+    "path": "/home/kriday/.t3/worktrees/fast-af-boi/t3-8a46ff0f-9fc27c4d565e9888",
+    "head": "1bf87efe2b72e21328bd254c56ae112666355ef0",
+    "diff_sha256": "336d80708abe08d04c5b467b18b2c81261d5cd0c0811e808545ee96efd567520",
+    "status": " M scripts/train_diffusion.py\n M tests/test_train_diffusion.py\n"
+  },
+  {
+    "path": "/home/kriday/.t3/worktrees/fast-af-boi/t3-5a5a70b9-099134478fa82927",
+    "head": "cde26573920c7ae5bd6aab06617952ba282bbde9",
+    "diff_sha256": "48a50c3d15dc88a0c6fb42f38fcc6f6b9dd7879ae15744a221328bfc594e2eeb",
+    "status": " M README.md\n M bench/BENCHMARK_WEEK.md\n M docs/DATA_PIPELINE.md\n M docs/EVALUATION_PROTOCOL.md\n M docs/TOKENIZER.md\n M docs/TRAINING_DATA.md\n M spec/edgefast-diff-100m.html\n M spec/edgefast-diff-100m.md\n M spec/edgefast-swarm.md\n?? docs/PROJECT_PLAN.md\n"
+  }
+]

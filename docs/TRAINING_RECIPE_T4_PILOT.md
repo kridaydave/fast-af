@@ -1,5 +1,13 @@
 # D1 training recipe and T4 pilot budget
 
+**Supervision update:** [all-block training](D1_SUPERVISION.md) now computes a
+shared differentiable clean stream and trains every noisy block. Select it with
+`--d1-supervision all-blocks`; legacy frontier masking remains the compatibility
+default. The inherited pilot token counts and timings below describe frontier
+supervision and must not budget the new path. Use its own scored-target rate,
+measured memory and matched-compute learning checks before approving a run.
+
+
 Updated 2026-11-15 with measured T4 infrastructure results; pilot authorization remains gated. This document is the contract for the training pipeline being built on `t3/training-pipeline-v1-shard-mask-resume`. It sets the model and masking assumptions, the staged pilot, the checkpoint and resume rules, the evaluation gates, and the T4 compute budget with its uncertainty. The implemented hybrid and blockwise objective are described in `D1_ARCHITECTURE.md`; the native chunk-v2 backend passed the 200-attempt P0 speed gate. The evaluation policy and production wall-time, checkpoint and upload controls still block P1. Current quota planning uses 30 Kaggle GPU-session hours per week for the T4 pair, governed by PROJECT_PLAN.md; the former six-hour cumulative cap is superseded. Review findings and evidence are recorded in `TRAINING_INTEGRATION_REVIEW.md`.
 
 The [project plan](PROJECT_PLAN.md) governs the general-purpose base, specialists
