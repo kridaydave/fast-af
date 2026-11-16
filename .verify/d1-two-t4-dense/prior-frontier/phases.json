@@ -1,0 +1,37 @@
+[
+  {
+    "phase": "native-parity",
+    "exit_code": 0,
+    "seconds": 34.91384631700001
+  },
+  {
+    "phase": "tc-parity",
+    "exit_code": 0,
+    "seconds": 17.222346543000015
+  },
+  {
+    "phase": "long-cache",
+    "exit_code": 0,
+    "seconds": 19.82699970799999
+  },
+  {
+    "phase": "parallel-gradients",
+    "exit_code": 0,
+    "seconds": 15.308226493000006
+  },
+  {
+    "phase": "baseline-micro4",
+    "exit_code": 0,
+    "seconds": 101.30074504100003
+  },
+  {
+    "phase": "optimized-micro4",
+    "exit_code": 0,
+    "seconds": 93.93148704800001
+  },
+  {
+    "phase": "optimized-micro8",
+    "exit_code": 1,
+    "seconds": 26.438265274000003
+  }
+]

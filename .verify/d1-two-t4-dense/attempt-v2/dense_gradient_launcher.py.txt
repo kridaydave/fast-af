@@ -1,0 +1,5 @@
+import sys
+from scripts.train_diffusion import d1_training_execution
+from scripts.check_d1_parallel import gradient_check
+with d1_training_execution("all-blocks", "cuda"):
+    gradient_check(sys.argv[1], "chunk-tc", "all-blocks")

@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/kaggle/working/d1-dense-qualification/src/scripts/kaggle_d1_dense_probe.py", line 107, in main
+    run_phase(root, phases, 'ddp-resume', ['scripts/check_d1_parallel.py', '--phase', 'resume',
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              '--backend', BACKEND, '--supervision', 'all-blocks', '--root', str(root),
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              '--out', str(root / 'ddp-resume.json')], 360, started)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/kaggle/working/d1-dense-qualification/src/scripts/kaggle_d1_dense_probe.py", line 62, in run_phase
+    raise RuntimeError(f'{name}: qualification failed; see retained log')
+RuntimeError: ddp-resume: qualification failed; see retained log

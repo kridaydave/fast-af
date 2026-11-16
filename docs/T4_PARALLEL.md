@@ -3,7 +3,9 @@
 For the new shared-prefix training path, see [D1 supervision](D1_SUPERVISION.md).
 Pass `--d1-supervision all-blocks` to training and `--supervision all-blocks`
 to the benchmark and parallel checker. The old measurements below remain
-frontier-only. Dense two-T4 timing and resume need separate qualification.
+frontier-only. Dense two-T4 timing and resume need separate qualification. The current
+[qualification record](../.verify/d1-two-t4-dense/README.md) includes the real
+paired-hardware gradient result, checker fixes and pending corrected run.
 
 
 The model remains **109,137,632 parameters**, with 16 layers, context 1024,

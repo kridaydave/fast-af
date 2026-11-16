@@ -1,0 +1,14 @@
+{"model": "d1", "params": 109137632, "backend": {"name": "torch-chunked-tensorcore", "version": "3", "chunk_size": "128", "short_chunk": "power-of-two", "matmul": "fp16-input-fp32-output-and-gradient", "state_solve": "fp32", "residual": "fp32", "norm": "fp32-input-and-weight", "torch": "2.11.0+cu130"}, "metric": "masked_ce"}
+/usr/local/lib/python3.13/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"step": 1, "masked_ce": 10.551359140917603, "lr": 5e-05, "tokens_seen": 2048, "tokens_processed": 4096, "tokens_scored": 1068, "grad_norm": 47.720680236816406, "optimizer_steps": 1, "optimizer_step_skipped": false}
+{"step": 2, "masked_ce": 10.436888770233812, "lr": 0.0001, "tokens_seen": 4096, "tokens_processed": 8192, "tokens_scored": 2180, "grad_norm": 18.479097366333008, "optimizer_steps": 2, "optimizer_step_skipped": false}
+{"step": 3, "masked_ce": 9.87807705608652, "lr": 0.0001, "tokens_seen": 6144, "tokens_processed": 12288, "tokens_scored": 3174, "grad_norm": 18.662036895751953, "optimizer_steps": 3, "optimizer_step_skipped": false, "val_masked_ce": 9.678747177124023}
+/usr/local/lib/python3.13/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"step": 4, "masked_ce": 9.654880987149532, "lr": 7.75e-05, "tokens_seen": 8192, "tokens_processed": 16384, "tokens_scored": 4244, "grad_norm": 5.169259548187256, "optimizer_steps": 4, "optimizer_step_skipped": false}
+{"step": 5, "masked_ce": 9.513958359142716, "lr": 3.250000000000001e-05, "tokens_seen": 10240, "tokens_processed": 20480, "tokens_scored": 5253, "grad_norm": 5.157317638397217, "optimizer_steps": 5, "optimizer_step_skipped": false}
+{"step": 6, "masked_ce": 9.870868104876894, "lr": 1e-05, "tokens_seen": 12288, "tokens_processed": 24576, "tokens_scored": 6309, "grad_norm": 6.285452842712402, "optimizer_steps": 6, "optimizer_step_skipped": false, "val_masked_ce": 9.600260734558105}
+/usr/local/lib/python3.13/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"config_hash": "f2b5007a35b4e3a4a57623b05fd66309b3d1681728319031a92f9d4b37d38131", "params": 109137632, "metric": "masked_ce", "tokens_processed": 24576, "tokens_scored": 6309, "step": 6, "tokens_seen": 12288, "val_masked_ce": [9.678747177124023, 9.600260734558105], "checkpoints": ["checkpoint-000003.pt", "checkpoint-000006.pt"]}

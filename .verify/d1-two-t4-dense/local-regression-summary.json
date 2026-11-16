@@ -1,0 +1,11 @@
+{
+  "tests": "302 passed, 2 GPU-only skipped",
+  "regressions": [
+    "multiline communicate tail parsing",
+    "actual CPU pause and kill at update 4",
+    "kill reaches descendants in separate sessions"
+  ],
+  "model_training_arithmetic_changed": false,
+  "validator_changed": "scripts/check_d1_parallel.py",
+  "validator_sha256": "5773d223d491d235c95134b44549abcd1fbde6ab27d067d656acfc9ac9c1d945"
+}

@@ -1,0 +1,21 @@
+Traceback (most recent call last):
+  File "/kaggle/working/d1-dense-qualification/src/scripts/check_d1_parallel.py", line 187, in <module>
+    main()
+    ~~~~^^
+  File "/kaggle/working/d1-dense-qualification/src/scripts/check_d1_parallel.py", line 183, in main
+    a.out.write_text(json.dumps(resume_check(a.root, a.backend, a.supervision), indent=2) + '\n')
+                                ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/kaggle/working/d1-dense-qualification/src/scripts/check_d1_parallel.py", line 126, in resume_check
+    rest, _ = p.communicate(timeout=30)
+              ~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 1223, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 2156, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 1270, in _check_timeout
+    raise TimeoutExpired(
+    ...<2 lines>...
+            stderr=b''.join(stderr_seq) if stderr_seq else None)
+subprocess.TimeoutExpired: Command '['/usr/bin/python3', '-m', 'torch.distributed.run', '--standalone', '--nproc-per-node=2', '/kaggle/working/d1-dense-qualification/interrupt_worker.py', '--bundle', '/kaggle/working/d1-dense-qualification/src/probe-bundle', '--profile', 'd1', '--gdn-backend', 'chunk-tc', '--device', 'cuda', '--amp', '--amp-init-scale', '8', '--world-size', '2', '--batch-size', '2', '--grad-accum', '1', '--steps', '6', '--warmup', '2', '--lr', '0.0001', '--seed', '1001', '--checkpoint-every', '3', '--eval-every', '3', '--eval-batches', '1', '--fused-optimizer', '--d1-supervision', 'all-blocks', '--out', '/kaggle/working/d1-dense-qualification/interrupted']' timed out after 30 seconds

@@ -4,7 +4,9 @@ The implementation trains every noisy block from a shared differentiable clean
 prefix. See [the design and execution rules](../../docs/D1_SUPERVISION.md).
 
 This record separates local checks, rejected GPU candidates and delivered GPU
-measurements. Dense two-T4 throughput and process resume remain unmeasured.
+measurements. The [paired-T4 follow-up](../d1-two-t4-dense/README.md) records actual DDP
+gradient parity and subsequent resume-checker fixes. Dense two-T4 throughput
+and process resume remain unqualified until the corrected run passes.
 No long pretraining run has been launched. The existing Kaggle two-T4 request
 remains a qualification request for the earlier frontier implementation.
 

@@ -1,0 +1,47 @@
+{
+  "status": "FAIL",
+  "supervision": "all-blocks",
+  "backend": "chunk-tc",
+  "job_cap_seconds": 1100,
+  "requested_hardware": "exactly two Tesla T4 / SM75",
+  "training": "bounded qualification only; no long pretraining",
+  "phases": [
+    {
+      "phase": "hardware",
+      "status": "PASS",
+      "exit_code": 0,
+      "seconds": 12.193546214999998,
+      "external_phase_cap_seconds": 30
+    },
+    {
+      "phase": "chunk-cpu-cache-parity",
+      "status": "PASS",
+      "exit_code": 0,
+      "seconds": 24.023118497000013,
+      "external_phase_cap_seconds": 120
+    },
+    {
+      "phase": "chunk-tc-cpu-cache-parity",
+      "status": "PASS",
+      "exit_code": 0,
+      "seconds": 12.948331204999988,
+      "external_phase_cap_seconds": 120
+    },
+    {
+      "phase": "ddp-gradients",
+      "status": "PASS",
+      "exit_code": 0,
+      "seconds": 15.80693387400001,
+      "external_phase_cap_seconds": 120
+    },
+    {
+      "phase": "ddp-resume",
+      "status": "FAIL",
+      "exit_code": 1,
+      "seconds": 73.85677913400002,
+      "external_phase_cap_seconds": 360
+    }
+  ],
+  "error": "ddp-resume: qualification failed; see retained log",
+  "wall_seconds": 138.83996837799998
+}

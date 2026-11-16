@@ -129,6 +129,25 @@ outputs. Earlier two-T4 gradient checks used another candidate. Final v3
 [measurement record](../.verify/d1-t4-parallel/README.md) and
 [execution guide](T4_PARALLEL.md). No long pretraining or P1 run has been launched.
 
+### Two-T4 validation follow-up
+
+The [dense two-T4 qualification](../.verify/d1-two-t4-dense/README.md) has now
+run on actual paired T4 hardware under Torch 2.11.0. Native/Tensor Core
+CPU-reference and full-context cache checks passed, as did full-model DDP
+gradient parity with a zero-scoring rank. The first attempts exposed checker
+bugs rather than establishing resume success: buffered multiline JSON and
+workers surviving a launcher-only kill. The checker now holds at update 4,
+kills the actual worker tree and verifies exact update/checkpoint boundaries.
+The local suite passes 302 tests with two GPU-only skips.
+
+Corrected notebook version 3 is **QUEUED** as of
+2026-11-16T17:40:47.138460+00:00, with no provider reservation. Dense two-T4
+resume and throughput remain unqualified. Each attempt has a 20-minute provider
+cap; no long pretraining was launched. The earlier frontier request failed at
+single-GPU micro 8 on Kaggle, so do not inherit that Colab batch size without
+local memory validation. See [status and quota](../.verify/d1-two-t4-dense/weekly-quota.json).
+The renewable 30-hour weekly policy and old timing caveats remain in force.
+
 ### Weekly quota policy
 
 Use one Kaggle runtime with two T4s and the

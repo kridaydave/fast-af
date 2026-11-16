@@ -62,6 +62,53 @@ def gradient_check(out, backend, supervision='frontier'):
         d.close()
 
 
+def training_rows(chunks):
+    """communicate() can return several newline-delimited records in one chunk."""
+    return [row for line in ''.join(chunks).splitlines()
+            if line.startswith('{') and 'masked_ce' in (row := json.loads(line))]
+
+
+def kill_process_tree(pid):
+    """torchrun workers have their own sessions; killpg(launcher) misses them."""
+    pids = [pid]
+    for parent in pids:
+        try:
+            children = Path(f'/proc/{parent}/task/{parent}/children').read_text()
+            pids.extend(int(child) for child in children.split())
+        except FileNotFoundError:
+            pass
+    # Capture descendants first, then kill the launcher before its workers so
+    # elastic's error handling cannot win the race and turn SIGKILL into exit 1.
+    for child in pids:
+        try:
+            os.kill(child, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def interruption_worker(path):
+    """Pause rank zero at the logged update until the controller kills the job.
+
+    A stdout reader alone can lag behind GPU work. The rank-zero pause also
+    prevents the other rank from applying another collective optimizer update.
+    Only logging is wrapped; the real trainer and update arithmetic are intact.
+    """
+    source = Path(__file__).resolve().parent.parent
+    Path(path).write_text(
+        'import json,sys,time\n'
+        f'sys.path.insert(0, {str(source)!r})\n'
+        'from scripts import train_diffusion as trainer\n'
+        'original_train = trainer.train\n'
+        'def train(cfg, resume=None, log=print):\n'
+        '    def observed(line):\n'
+        '        print(line, flush=True)\n'
+        '        if isinstance(line, str) and line.startswith("{") and json.loads(line).get("step") == 4:\n'
+        '            while True: time.sleep(1)\n'
+        '    return original_train(cfg, resume=resume, log=observed)\n'
+        'trainer.train = train\n'
+        'trainer.main()\n')
+
+
 def resume_check(root, backend, supervision='frontier'):
     root = Path(root)
     script = Path(__file__).with_name('train_diffusion.py')
@@ -73,11 +120,15 @@ def resume_check(root, backend, supervision='frontier'):
             '--eval-every', '3', '--eval-batches', '1', '--fused-optimizer']
     if supervision != 'frontier':
         base += ['--d1-supervision', supervision]
+    worker = root / 'interrupt_worker.py'
+    interruption_worker(worker)
     reports = []
     started = time.monotonic()
     for name, resume, kill in [('full', None, False), ('interrupted', None, True),
                                ('restarted', root/'interrupted/checkpoint-000003.pt', False)]:
         argv = base + ['--out', str(root/name)]
+        if kill:
+            argv[argv.index(str(script))] = str(worker)
         if resume:
             argv += ['--resume', str(resume)]
         p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -88,17 +139,21 @@ def resume_check(root, backend, supervision='frontier'):
             for line in p.stdout:
                 lines.append(line)
                 if kill and line.startswith('{') and json.loads(line).get('step') == 4:
-                    os.killpg(p.pid, signal.SIGKILL)
+                    kill_process_tree(p.pid)
                     break
             rest, _ = p.communicate(timeout=30)
             lines.append(rest)
         finally:
             if p.poll() is None:
-                os.killpg(p.pid, signal.SIGKILL)
+                kill_process_tree(p.pid)
                 p.wait()
             (root/f'{name}.log').write_text(''.join(lines))
         assert p.returncode == (-9 if kill else 0), (name, p.returncode, ''.join(lines)[-3000:])
-        rows = [row for line in lines if line.startswith('{') and 'masked_ce' in (row := json.loads(line))]
+        rows = training_rows(lines)
+        assert [row['step'] for row in rows] == (list(range(1, 5)) if kill
+                                                 else list(range(4, 7)) if resume else list(range(1, 7)))
+        if kill:
+            assert not (root / name / 'checkpoint-000006.pt').exists(), 'job finished before interruption'
         assert all(not row['optimizer_step_skipped'] for row in rows)
         reports.append(rows)
     left = load_checkpoint(root/'full/checkpoint-000006.pt')
