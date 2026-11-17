@@ -20,6 +20,9 @@ python -m bench --only smollm2-135m,qwen3.5-0.8b
 
 The harness is in `bench/`, the model roster in `bench/config.yaml`, the docs in `docs/`, and the recorded runs in `results_t4*.yaml`. Start with `docs/DATA_PIPELINE.md` and `docs/TOKENIZER.md` if you want to build the data.
 
+The [tasks and feedback workflow](docs/TASKS_AND_FEEDBACK.md) builds verified
+Python tasks and grades recorded completions in isolated CPU workers.
+
 ## Backends
 
 | backend | models | status |
