@@ -1,84 +1,42 @@
-# EdgeFast-Diff 100M — benchmark week harness
+# fast-af
 
-CPU training-data tools: [prepare and pack local corpus samples](docs/DATA_PIPELINE.md)
-and [train a reproducible byte-level BPE tokenizer](docs/TOKENIZER.md).
-The [actual training-data workflow](docs/TRAINING_DATA.md) fetches pinned sources,
-filters the full benchmark sets, and enforces the token mixture.
+Sonic of LLMs. Slow pokes not allowed.
 
-Measures TPS (tokens/s) and HumanEval pass@1 for the D1 roster on a free T4
-(batch 1, 1k in / 1k out, median of 5 timed runs). D1 is 100M; baselines are
-size-matched to the 100M band, larger models included with the size gap
-acknowledged. Roster lives in `bench/config.yaml`.
+fast-af is a small, fast language model that runs on your own machine. It's early and may break. Updates come regularly.
 
-## Run (Colab free T4)
+This repo holds the model work and the benchmark harness. The harness measures tokens per second and HumanEval pass@1 on a free Colab T4, and it records the machine, the config, and the raw outputs so the numbers can be checked.
+
+## Run it
 
 ```bash
-# Colab T4 runtime: upload bootstrap_colab.sh, then
+# Colab free T4: upload bootstrap_colab.sh, then
 BENCH_REPO_DIR=/content/fast-af BENCH_RUN=none bash bootstrap_colab.sh
-cd /content/fast-af                           # bootstrap clones; it never rewrites bench/
+cd /content/fast-af
 python -m bench --config bench/config.yaml --out results.yaml
-python -m bench --only smollm2-135m,qwen3.5-0.8b          # one model at a time
-python -m bench --only smoldlm-144m,smoldlm-144m-cached   # emits token-agreement + speed comparison
+python -m bench --only smollm2-135m,qwen3.5-0.8b
 ```
 
-Output `results.yaml`: machine provenance plus per-model configuration,
-speed/pass/cache-warm accounting, stop reasons, full baseline token IDs and,
-for AR models, HumanEval pass@1 with raw per-problem completions for re-scoring.
-Every HumanEval row records its prompt mode, fixed template text/hash, and
-extraction-policy version. See [the evaluation protocol](docs/EVALUATION_PROTOCOL.md)
-for the completion vs chat modes, extraction policy, and G0 calibration rules.
+## What's inside
 
-For the historical G1 sampler gate, use the [baseline capture and comparison
-commands](bench/BENCHMARK_WEEK.md#g1-historical-sampler-regression). These freeze
-full token IDs from the historical and current committed samplers, with pinned
-model assets and a strict offline 99% agreement check.
+The harness is in `bench/`, the model roster in `bench/config.yaml`, the docs in `docs/`, and the recorded runs in `results_t4*.yaml`. Start with `docs/DATA_PIPELINE.md` and `docs/TOKENIZER.md` if you want to build the data.
 
-## Backends (`bench/backends.py`)
+## Backends
 
-| backend  | models | status |
+| backend | models | status |
 |---|---|---|
-| hf     | SmolLM2-135M, Qwen3.5-0.8B (+bnb int4), LFM2.5-350M | ready; speed runs force exactly 1,024 output tokens |
-| dllm   | LLaDA-8B native | preliminary; Fast-dLLM mode fails loudly until it is genuinely wired |
-| custom | smoldlm-144m cached + uncached policies | wired; legacy 350 tok/s row is uncached and lacks current accounting |
-| B2 | Qwen3.5-0.8B + DFlash2 | unavailable; harness refuses to label plain int4 as speculative decode |
+| hf | SmolLM2-135M, Qwen3.5-0.8B (+bnb int4), LFM2.5-350M | ready; speed runs force exactly 1,024 output tokens |
+| dllm | LLaDA-8B native | preliminary; Fast-dLLM mode fails loudly until it is genuinely wired |
+| custom | smoldlm-144m cached + uncached policies | wired; the legacy 350 tok/s row is uncached |
+| B2 | Qwen3.5-0.8B + DFlash2 | unavailable; the harness refuses to label plain int4 as speculative decode |
 
 ## Honest caveats
 
-- No GPU on the dev box. Benchmarks ran on a Colab free T4 (results in
-  `results_t4.yaml`, 2026-11-09); the smoldlm wiring itself was smoke-tested on
-  CPU before that.
-- The diffusion `CustomBackend` loop is D1's decode-policy prototype
-  (block_size 32, 0.9 confidence unmasking, a top-1 commit when a pass
-  clears nothing so the loop always makes progress, forced fill on the last
-  pass so a block never commits mask tokens). The spec's D1 knobs (0.97
-  block early stop, prompt cache, block overlap) are not in this prototype.
-- dLLM generate-arg names (`num_steps`, `max_new_tokens`) verified against the
-  dLLM version installed by bootstrap_colab.sh; adjust if the API differs.
-- Both tiers decode greedily (AR via `do_sample=False`, diffusion via argmax).
-  smoldlm's card warns greedy text degenerates (repetition shows up in
-  `sample_text`); it does not affect TPS.
-- DFlash2 (B2) remains unwired and has no 0.8B drafter; it is explicitly unavailable.
-- TPS uses total model computation after host-side tokenization, including
-  AR prefill or diffusion cache warm. Prefill is also reported separately.
-- Historical `results_t4*.yaml` HumanEval rows are completion-protocol,
-  50-problem runs. They are not valid quality evidence for the chat protocol,
-  and no fixed accuracy is claimed from them until a new calibrated run exists.
+- No GPU on the dev box. Benchmarks ran on a free Colab T4, results in `results_t4.yaml`.
+- The diffusion loop is D1's decode-policy prototype. The spec's D1 knobs (0.97 block early stop, prompt cache, block overlap) are not in it yet.
+- Historical `results_t4*.yaml` HumanEval rows are completion-protocol, 50-problem runs. They are not valid quality evidence for the chat protocol, and no fixed accuracy is claimed from them.
+- TPS counts total model computation after host-side tokenization, including AR prefill or diffusion cache warm. Prefill is reported separately.
+- DFlash2 (B2) is unwired and has no 0.8B drafter. It is marked unavailable, not hidden.
 
-## KV cache: the 350 tok/s baseline is handicapped
+## Contribute
 
-`smoldlm`'s own `modeling_smoldlm.py` ships a cached `generate()` (KV cache via
-`set_cache_mode`, default 10 steps, temp 0.7). Our `CustomBackend` ran its own
-decode loop with **no cache at all**, so every pass re-forwards the whole
-prefix + block (1,056-2,048 tokens) instead of just the new tokens.
-
-- Estimated gain from enabling the cache only: **≥2x (700 tok/s conservative,
-  ~1,200-1,800 central)**. Estimate, not measured.
-- **Wired (2026-11-11):** run the `smoldlm-144m-cached` config row.
-  The loop then warms the prefix into the model's cache once and scores each
-  denoising pass on the block alone at its absolute position, the same
-  read/write split stock `generate()` uses. This is not a pure cache-only A/B:
-  the legacy uncached full-sequence path lets the prefix attend to the masked
-  block, while the cached policy freezes the prefix. Report token agreement
-  alongside speed and treat the rows as two decode policies. Still unmeasured
-  on T4; the ≥2x number remains an estimate until then.
-- Source: `research/hillclimb-speed-reverify.md` (verdict + arithmetic).
+Want to help? Pick an issue labeled good first issue, or open one. Keep it small.
