@@ -1,4 +1,19 @@
 {
-  "include": ["scripts/d1_model.py", "scripts/validate_d1.py"],
+  "include": [
+    "scripts/benchmark_d1_parallel.py",
+    "scripts/build_probe_bundle.py",
+    "scripts/check_d1_cache_long.py",
+    "scripts/check_d1_dense.py",
+    "scripts/check_d1_p0.py",
+    "scripts/check_d1_parallel.py",
+    "scripts/check_gdn_t4.py",
+    "scripts/d1_model.py",
+    "scripts/distributed_training.py",
+    "scripts/evaluate_d1_checkpoint.py",
+    "scripts/kaggle_t4_probe.py",
+    "scripts/package_kaggle_probe.py",
+    "scripts/train_diffusion.py",
+    "scripts/validate_d1.py"
+  ],
   "typeCheckingMode": "basic"
 }

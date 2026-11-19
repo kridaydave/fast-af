@@ -14,7 +14,13 @@
     {
       "path": "scripts/check_d1_parallel.py",
       "sha256": "9af5540127d1f7d33335c462f143a6797b0625f98d753a19ab3bc4a4c34c90b4",
-      "git_blob": "b32b9100dc789baf7d9c5d1aa864c098900bc559"
+      "git_blob": "b32b9100dc789baf7d9c5d1aa864c098900bc559",
+      "superseded_after_measurement": {
+        "reason": "The measurement exposed that torchrun workers run in their own process sessions, so killing the launcher alone did not prove interruption.",
+        "sha256": "5773d223d491d235c95134b44549abcd1fbde6ab27d067d656acfc9ac9c1d945",
+        "git_blob": "b6c58a16d8e3cd8f429c37af799b34d8a2bd4932",
+        "checked_in": "0749ac5"
+      }
     },
     {
       "path": "scripts/check_gdn_t4.py",
@@ -37,5 +43,5 @@
       "git_blob": "a89980c790f6bfc6e3e31d3b47e9618648583f20"
     }
   ],
-  "recovery": "Each git_blob is the delivered source blob, retained by the implementation commit. Raw GPU reports also include source_sha256."
+  "recovery": "Each git_blob is the source blob measured for this record, retained by the implementation commit. Raw GPU reports also include source_sha256. Six of seven entries still match the delivered tree; scripts/check_d1_parallel.py was superseded after measurement and records its delivered blob under superseded_after_measurement."
 }

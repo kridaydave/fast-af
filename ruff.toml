@@ -1,0 +1,6 @@
+# Ruff gate for this repository. `.verify/` holds archived Colab job sources that
+# rely on injected notebook globals, so they are preserved but not linted.
+extend-exclude = [".verify"]
+
+[lint]
+select = ["E4", "F"]

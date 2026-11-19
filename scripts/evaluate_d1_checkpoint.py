@@ -21,11 +21,13 @@ from scripts.train_diffusion import (TrainConfig, ShardLoader, block_diffusion_m
 
 @torch.no_grad()
 def evaluate_cached(cfg, model, vocab, *, batches=None, recompute_prefix=False,
-                    wall_cap=600, log=None):
+                    wall_cap=None, log=None):
     """Score the same masks as full recomputation, committing only clean blocks.
 
     This is evaluation only: cached prefix states must never replace training
     prefix computation or its gradients. Counts include clean commit passes.
+    A wall_cap aborts with TimeoutError; it is opt-in so that a bounded job can
+    ask for one without killing a training run that evaluates mid-schedule.
     """
     if cfg.profile != 'd1' or cfg.d1 != model.cfg:
         raise ValueError('requires matching D1 configuration')
@@ -55,7 +57,7 @@ def evaluate_cached(cfg, model, vocab, *, batches=None, recompute_prefix=False,
                 break
             cache = None
             for frontier in range(length // block):
-                if time.monotonic() - start > wall_cap:
+                if wall_cap is not None and time.monotonic() - start > wall_cap:
                     raise TimeoutError('evaluation wall cap reached')
                 inputs, mask = block_diffusion_mask(
                     targets, block, min_ratio=cfg.mask_min, max_ratio=cfg.mask_max,
@@ -108,6 +110,8 @@ def main():
     parser.add_argument('--amp', action='store_true')
     parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--max-batches', type=int)
+    parser.add_argument('--wall-cap', type=float, default=600.0,
+                        help='seconds before this bounded job aborts; 0 disables')
     parser.add_argument('--reference', action='store_true')
     args = parser.parse_args()
     report = {'status': 'RUNNING', 'device': args.device, 'source_sha256': {
@@ -145,7 +149,8 @@ def main():
             report.update(gpu=torch.cuda.get_device_name(), capability=torch.cuda.get_device_capability())
             torch.cuda.empty_cache(); torch.cuda.reset_peak_memory_stats()
         report['evaluation'] = evaluate_cached(cfg, model, vocab, batches=args.max_batches,
-                                               recompute_prefix=args.reference, log=print)
+                                               recompute_prefix=args.reference,
+                                               wall_cap=args.wall_cap or None, log=print)
         if args.device == 'cuda':
             report.update(peak_allocated_bytes=torch.cuda.max_memory_allocated(),
                           peak_reserved_bytes=torch.cuda.max_memory_reserved())

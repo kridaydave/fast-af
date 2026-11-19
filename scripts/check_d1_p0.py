@@ -100,7 +100,7 @@ def overhead(root, result):
     from scripts.evaluate_d1_checkpoint import evaluate_cached
 
     torch.cuda.reset_peak_memory_stats()
-    measured = evaluate_cached(cfg, model, 32000, log=print)
+    measured = evaluate_cached(cfg, model, 32000, wall_cap=1800, log=print)
     result.update(seconds=measured['seconds'], val_masked_ce=measured['val_masked_ce'],
                   validation_sequences=meta['splits']['validation']['sequences'],
                   validation_unique_tokens=meta['splits']['validation']['tokens'],

@@ -1,8 +1,7 @@
 import json
-from pathlib import Path
 import numpy as np
 import pytest
-from scripts.prepare_corpus import filehash,write_manifest,SPECIAL
+from scripts.prepare_corpus import filehash,write_manifest
 from scripts.train_tokenizer import train
 from scripts.build_training_mix import build
 
