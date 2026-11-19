@@ -1,0 +1,16 @@
+{
+  "utc": "2026-11-16T17:40:47.138460+00:00",
+  "status": "QUEUED",
+  "failure_message": "",
+  "weekly_allowed_h": 30.0,
+  "weekly_used_h": 0.23108805555555556,
+  "provider_reserved_h": 0.0,
+  "unit": "Kaggle GPU-enabled session wall-clock hours",
+  "device_count_multiplier": 1,
+  "local_queued_job_cap_h": 0.3333333333333333,
+  "planning_available_h": 29.43557861111111,
+  "reservation_policy": "Replace this job local reservation with its provider reservation if allocated; do not subtract the same job twice.",
+  "token_persisted_outside_repository": true,
+  "actual_dense_two_t4_resume_qualified": false,
+  "actual_dense_two_t4_throughput_measured": false
+}

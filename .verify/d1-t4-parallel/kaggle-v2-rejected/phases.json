@@ -1,0 +1,12 @@
+[
+  {
+    "phase": "native-parity",
+    "exit_code": 0,
+    "seconds": 31.507147942000017
+  },
+  {
+    "phase": "tc-parity",
+    "exit_code": 1,
+    "seconds": 13.005142236000012
+  }
+]

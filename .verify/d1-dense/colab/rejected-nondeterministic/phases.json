@@ -1,0 +1,17 @@
+[
+  {
+    "name": "chunk-parity",
+    "exit_code": 0,
+    "elapsed_seconds": 25.084928022999975
+  },
+  {
+    "name": "chunk-tc-parity",
+    "exit_code": 0,
+    "elapsed_seconds": 35.69010238799996
+  },
+  {
+    "name": "dense-resume",
+    "exit_code": 1,
+    "elapsed_seconds": 146.84421211799997
+  }
+]

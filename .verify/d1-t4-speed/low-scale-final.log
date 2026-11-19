@@ -1,0 +1,6 @@
+{"layer_case_passed": {"amp": false}}
+{"layer_case_passed": {"amp": true}}
+{"full_forward_passed": {"amp": false}}
+{"full_forward_passed": {"amp": true}}
+{"full_backward_passed": {"amp": false}}
+{"full_backward_passed": {"amp": true}}

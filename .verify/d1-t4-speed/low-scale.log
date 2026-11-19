@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/content/d1-speed/src/low_scale_job.py", line 13, in <module>
+    assert json.loads((root/'p0-done.json').read_text())['exit_code']==0,'P0/overhead failed'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: P0/overhead failed
+

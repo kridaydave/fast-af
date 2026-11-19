@@ -1,0 +1,41 @@
+{
+  "reference": "colab-final/measured-scripts",
+  "files": {
+    "d1_model.py": {
+      "measured_sha256": "6b9456218ece8d0f3329e23bd386fc30729630354e9a325c9be58dacd05e7ecb",
+      "delivered_sha256": "6b9456218ece8d0f3329e23bd386fc30729630354e9a325c9be58dacd05e7ecb",
+      "byte_identical": true
+    },
+    "train_diffusion.py": {
+      "measured_sha256": "752de83614a7dccd56a004053f74b4ecda0208f25b6bba9808bb8657727a80a2",
+      "delivered_sha256": "eeaf9aa857ff022ef85bc2d4f33d1c1d5514dbdb6ebeea0c457ece56718c54b4",
+      "byte_identical": false
+    },
+    "distributed_training.py": {
+      "measured_sha256": "1e41c0a6da94d3c1d978cd1430a67806b9e16bb32b646695f797b12766ddb3bc",
+      "delivered_sha256": "1e41c0a6da94d3c1d978cd1430a67806b9e16bb32b646695f797b12766ddb3bc",
+      "byte_identical": true
+    },
+    "benchmark_d1_parallel.py": {
+      "measured_sha256": "20072e72624dba8a3f62b4d94ed5bda17566ce52d25f1bfd1e2ba9ff556f8c3f",
+      "delivered_sha256": "20072e72624dba8a3f62b4d94ed5bda17566ce52d25f1bfd1e2ba9ff556f8c3f",
+      "byte_identical": true
+    },
+    "check_gdn_t4.py": {
+      "measured_sha256": "a0c40d416eae7dd48ab6e247548b7b22d1ed6ef232d64e3a8298826b3e68d3e7",
+      "delivered_sha256": "a0c40d416eae7dd48ab6e247548b7b22d1ed6ef232d64e3a8298826b3e68d3e7",
+      "byte_identical": true
+    },
+    "check_d1_parallel.py": {
+      "measured_sha256": "7ea16802ab796a6541dbe000cdb58d05d3ab3ebcf431953dcad562471e6433ff",
+      "delivered_sha256": "7ea16802ab796a6541dbe000cdb58d05d3ab3ebcf431953dcad562471e6433ff",
+      "byte_identical": true
+    },
+    "check_d1_cache_long.py": {
+      "measured_sha256": "3cee313824468010e38d127d2e1e7d69f83c91b5e8f43a06ff6772447933f416",
+      "delivered_sha256": "3cee313824468010e38d127d2e1e7d69f83c91b5e8f43a06ff6772447933f416",
+      "byte_identical": true
+    }
+  },
+  "trainer_change": "Only final CLI summary printing is now rank-zero-only. All training/checkpoint functions and arithmetic are identical."
+}

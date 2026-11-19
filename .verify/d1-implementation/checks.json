@@ -1,0 +1,37 @@
+{
+  "implementation_commit": "a640397c126a5dc5d70460e52ae24e869bde6c94",
+  "hardware_guard_commit": "3f080ba886fd72aee760900a6333d3ce422452eb",
+  "test_groups": [
+    {
+      "log": "core-tests.log",
+      "passed": 193,
+      "skipped": 2,
+      "exit_code": 0
+    },
+    {
+      "log": "cache-tests.log",
+      "passed": 12,
+      "skipped": 0,
+      "exit_code": 0
+    },
+    {
+      "log": "wiring-tests.log",
+      "passed": 4,
+      "skipped": 0,
+      "exit_code": 0
+    }
+  ],
+  "passed": 209,
+  "skipped": 2,
+  "cuda_executed": false,
+  "typecheck": {
+    "filesAnalyzed": 2,
+    "errorCount": 0,
+    "warningCount": 0,
+    "informationCount": 0,
+    "timeInSec": 17.75
+  },
+  "protected_worktrees_preserved": true,
+  "known_deployment_blocker": "Pinned FLA/Triton requires SM80+; T4 is SM75",
+  "verification_interruptions": "Two initial concurrent runs ended 143 before completion; final single pytest produced a complete 209-pass/2-skip summary but runner returned 143. Separate groups above each exited 0."
+}

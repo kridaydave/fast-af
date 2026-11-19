@@ -1,0 +1,7 @@
+{
+  "final_integration_report": "final-checks/integration.json",
+  "executed_job": "jobs/final_integration_executed.py.txt",
+  "executed_source_reconstruction": "original launch source; exact script content was reconstructed after a late update overwrote the file on disk",
+  "late_update": "jobs/final_integration_late_update.py.txt",
+  "limitation": "The extra overhead-helper mapping check arrived after the process loaded its source and did not run. Trainer delegation, model mode and CPU/CUDA RNG checks did run and passed. The final overhead reporting adapter has local type/lint checks; its underlying evaluator and counts were measured on T4."
+}

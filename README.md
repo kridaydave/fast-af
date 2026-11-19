@@ -6,6 +6,11 @@ fast-af is a small, fast language model that runs on your own machine. It's earl
 
 This repo holds the model work and the benchmark harness. The harness measures tokens per second and HumanEval pass@1 on a free Colab T4, and it records the machine, the config, and the raw outputs so the numbers can be checked.
 
+The [project plan](docs/PROJECT_PLAN.md) starts with a general-purpose base, then
+adds specialists and explores a mixture of experts. D1 is a roughly 100M-parameter
+test model. The Python-heavy corpus and token-budget recipe are for testing the
+training pipeline.
+
 ## Run it
 
 ```bash
@@ -19,6 +24,15 @@ python -m bench --only smollm2-135m,qwen3.5-0.8b
 ## What's inside
 
 The harness is in `bench/`, the model roster in `bench/config.yaml`, the docs in `docs/`, and the recorded runs in `results_t4*.yaml`. Start with `docs/DATA_PIPELINE.md` and `docs/TOKENIZER.md` if you want to build the data.
+
+The [actual training-data workflow](docs/TRAINING_DATA.md) fetches pinned sources,
+filters the full benchmark sets, and enforces the token mixture. The
+[minimal training loop](docs/TRAINING_LOOP.md) trains and resumes a small
+diffusion model on that packed bundle. The [T4 pilot recipe](docs/TRAINING_RECIPE_T4_PILOT.md)
+and [integration review](docs/TRAINING_INTEGRATION_REVIEW.md) record the D1 blockers
+and verified CPU checks. The [D1 implementation](docs/D1_ARCHITECTURE.md) adds the
+109M hybrid, block-causal training and immutable prefix caches, with T4 checks and
+measured throughput recorded in [the T4 optimization evidence](.verify/d1-t4-speed/README.md).
 
 ## Backends
 

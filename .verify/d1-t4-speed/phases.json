@@ -1,0 +1,17 @@
+[
+  {
+    "phase": "parity",
+    "exit_code": 0,
+    "wall_seconds": 26.12382882199995
+  },
+  {
+    "phase": "resume",
+    "exit_code": 0,
+    "wall_seconds": 102.59795464800004
+  },
+  {
+    "phase": "probe",
+    "exit_code": 0,
+    "wall_seconds": 144.87800156700007
+  }
+]

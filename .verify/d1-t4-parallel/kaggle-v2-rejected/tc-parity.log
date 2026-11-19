@@ -1,0 +1,31 @@
+{"core_case_passed": {"length": 1, "amp": false}}
+{"core_case_passed": {"length": 1, "amp": true}}
+{"core_case_passed": {"length": 31, "amp": false}}
+{"core_case_passed": {"length": 31, "amp": true}}
+{"core_case_passed": {"length": 32, "amp": false}}
+{"core_case_passed": {"length": 32, "amp": true}}
+{"core_case_passed": {"length": 33, "amp": false}}
+{"core_case_passed": {"length": 33, "amp": true}}
+{"core_case_passed": {"length": 65, "amp": false}}
+{"core_case_passed": {"length": 65, "amp": true}}
+{"core_case_passed": {"length": 127, "amp": false}}
+{"core_case_passed": {"length": 127, "amp": true}}
+{"core_case_passed": {"length": 128, "amp": false}}
+{"core_case_passed": {"length": 128, "amp": true}}
+{"core_case_passed": {"length": 129, "amp": false}}
+{"core_case_passed": {"length": 129, "amp": true}}
+{"core_case_passed": {"length": 257, "amp": false}}
+{"core_case_passed": {"length": 257, "amp": true}}
+{"layer_case_passed": {"amp": true}}
+Traceback (most recent call last):
+  File "/kaggle/working/d1-opt/src/scripts/check_gdn_t4.py", line 412, in main
+    report['checks']['full_model']=full_parity()
+                                   ~~~~~~~~~~~^^
+  File "/kaggle/working/d1-opt/src/scripts/check_gdn_t4.py", line 151, in full_parity
+    'cached':comparison(actual[:,32:64],cached,0.003,1e-5,'cached logits'),
+             ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/kaggle/working/d1-opt/src/scripts/check_gdn_t4.py", line 43, in comparison
+    raise AssertionError(f'{label}: {result}')
+AssertionError: cached logits: {'relative_l2': 0.00303925741814576, 'max_abs': 0.0076904296875, 'reference_l2': 511.98834228515625, 'allowed_relative': 0.003, 'allowed_absolute_l2': 1e-05}
+
+{"status": "FAIL", "report": "/kaggle/working/d1-opt/tc-parity.json"}

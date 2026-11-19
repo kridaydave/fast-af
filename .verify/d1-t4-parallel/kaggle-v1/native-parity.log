@@ -1,0 +1,27 @@
+{"core_case_passed": {"length": 1, "amp": false}}
+{"core_case_passed": {"length": 1, "amp": true}}
+{"core_case_passed": {"length": 31, "amp": false}}
+{"core_case_passed": {"length": 31, "amp": true}}
+{"core_case_passed": {"length": 32, "amp": false}}
+{"core_case_passed": {"length": 32, "amp": true}}
+{"core_case_passed": {"length": 33, "amp": false}}
+{"core_case_passed": {"length": 33, "amp": true}}
+{"core_case_passed": {"length": 65, "amp": false}}
+{"core_case_passed": {"length": 65, "amp": true}}
+{"core_case_passed": {"length": 127, "amp": false}}
+{"core_case_passed": {"length": 127, "amp": true}}
+{"core_case_passed": {"length": 128, "amp": false}}
+{"core_case_passed": {"length": 128, "amp": true}}
+{"core_case_passed": {"length": 129, "amp": false}}
+{"core_case_passed": {"length": 129, "amp": true}}
+{"core_case_passed": {"length": 257, "amp": false}}
+{"core_case_passed": {"length": 257, "amp": true}}
+{"layer_case_passed": {"amp": false}}
+/usr/local/lib/python3.13/dist-packages/torch/nn/functional.py:2954: UserWarning: Mismatch dtype between input and weight: input dtype = c10::Half, weight dtype = float, Cannot dispatch to fused implementation. (Triggered internally at /pytorch/aten/src/ATen/native/layer_norm.cpp:344.)
+  return torch.rms_norm(input, normalized_shape, weight, eps)
+{"layer_case_passed": {"amp": true}}
+{"full_forward_passed": {"amp": false}}
+{"full_forward_passed": {"amp": true}}
+{"full_backward_passed": {"amp": false}}
+{"full_backward_passed": {"amp": true}}
+{"status": "PASS", "report": "/kaggle/working/d1-opt/native-parity.json"}

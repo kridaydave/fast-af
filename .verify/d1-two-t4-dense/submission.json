@@ -1,0 +1,17 @@
+{
+  "submitted_utc": "2026-11-16T17:15:15.188251+00:00",
+  "url": "https://www.kaggle.com/code/kridaydave/d1-dense-two-t4-qualification-20261116",
+  "error": "",
+  "version": 1,
+  "kernel_id": 145441845,
+  "private": true,
+  "internet": false,
+  "requested_shape": "NvidiaTeslaT4 (T4 x2)",
+  "external_timeout_seconds": 1200,
+  "internal_budget_seconds": 1100,
+  "quota_available_seconds_before_submission": 107485.145,
+  "local_reservation_hours": 0.3333333333333333,
+  "source_sha256": "f335e04a51820cf9e14bee9d663d945a0eb02714ced1e9ddd60e81769c7bc0c2",
+  "head": "8373ef433cbe9ef46fa822a8de22396d2d9699c2",
+  "supervision": "all-blocks"
+}

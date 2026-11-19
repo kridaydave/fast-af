@@ -1,0 +1,7 @@
+{
+  "status": "UNREFRESHED_AFTER_INTERRUPTION",
+  "last_verified_frontier_job_status": "QUEUED",
+  "dense_two_t4_status": "NOT_RUN",
+  "refresh_error": "Authorized temporary credential file no longer exists after interruption. No new GPU job submitted.",
+  "last_quota_snapshot": "../d1-t4-parallel/weekly-budget.json"
+}

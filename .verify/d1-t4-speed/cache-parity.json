@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "contexts": 16,
+  "scored_tokens": 8078,
+  "loss_abs_error": 5.792821802685921e-06,
+  "allowed_abs_error": 0.003,
+  "reference_ce": 7.629177009507434,
+  "cached_ce": 7.629182802329237
+}

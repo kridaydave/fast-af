@@ -1,0 +1,87 @@
+{
+  "amp": true,
+  "amp_init_scale": 8.0,
+  "backend": {
+    "chunk_size": "128",
+    "name": "torch-chunked",
+    "short_chunk": "power-of-two",
+    "torch": "2.14.1+cu130",
+    "version": "2"
+  },
+  "batch_size": 1,
+  "beta1": 0.9,
+  "beta2": 0.95,
+  "bundle": "/content/d1-speed/low-scale-final-run/src/probe-bundle",
+  "checkpoint_every": 3,
+  "config_hash": "154e28ef763a9d1ef5fa13c9141a93990ff3350e5d3d6aa9532284773d1dba2c",
+  "d1": {
+    "attention_every": 4,
+    "block_size": 32,
+    "conv_width": 4,
+    "d_model": 640,
+    "ffn_hidden": 1728,
+    "gdn_heads": 4,
+    "gdn_key_dim": 128,
+    "gdn_value_dim": 256,
+    "head_dim": 64,
+    "kv_heads": 2,
+    "n_layers": 16,
+    "query_heads": 10
+  },
+  "d_model": 64,
+  "device": "cuda",
+  "eps": 1e-08,
+  "eval_batches": 1,
+  "eval_every": 3,
+  "eval_full": false,
+  "gdn_backend": "chunk",
+  "git_commit": null,
+  "gpu": "Tesla T4",
+  "grad_accum": 1,
+  "grad_clip": 1.0,
+  "library_versions": {
+    "fla": null,
+    "numpy": "2.4.6",
+    "python": "3.13.16",
+    "torch": "2.14.1+cu130"
+  },
+  "lr": 0.0003,
+  "mask_max": 0.9,
+  "mask_min": 0.1,
+  "mask_mode": "blockwise",
+  "metric": "masked_ce",
+  "mlp_ratio": 4,
+  "model_params": 109137632,
+  "n_heads": 4,
+  "n_layers": 2,
+  "out": "/content/d1-speed/low-scale-final-run/resume-full",
+  "p1": false,
+  "profile": "d1",
+  "provenance": {
+    "fingerprint": "ec6f6545c91ae536ed75e631f5d53f699703279477f913a753c53df51a1d8508",
+    "manifest_sha256": "85c0cbcfd4e161742439c11b803a0054bbde91528a09bb1582ac64e90dd51dd6",
+    "seq_len": 1024,
+    "shards": [
+      {
+        "path": "train.bin",
+        "sha256": "3e2b6e538ff0ea10c3d309bd9bd89885237198708f9ab49abd4f838d6aa4ce84",
+        "split": "train",
+        "tokens": 131072
+      },
+      {
+        "path": "validation.bin",
+        "sha256": "98731bb009f6433bc2bab4555b96cd57493ca10e35e5f5ca196c0ec7e48c7b66",
+        "split": "validation",
+        "tokens": 32768
+      }
+    ],
+    "tokenizer_manifest_sha256": "5686f355f4332a73a8caa67910d4c52d798a7f361df1f35450ea0f4ed3b241b0",
+    "tokenizer_sha256": "5bb6b95687e59ae2c8a52c7ec8e664574aaffae8875f567a7335d9d666e3de0b"
+  },
+  "seed": 17,
+  "steps": 6,
+  "threads": 1,
+  "verify_hashes": true,
+  "warmup": 1,
+  "weight_decay": 0.1
+}

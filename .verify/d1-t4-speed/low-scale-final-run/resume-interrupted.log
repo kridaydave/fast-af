@@ -1,0 +1,5 @@
+{"model": "d1", "params": 109137632, "backend": {"name": "torch-chunked", "version": "2", "chunk_size": "128", "short_chunk": "power-of-two", "torch": "2.14.1+cu130"}, "metric": "masked_ce"}
+{"step": 1, "masked_ce": 10.75275707244873, "lr": 0.0003, "tokens_seen": 1024, "tokens_processed": 128, "tokens_scored": 17, "grad_norm": 101.17723083496094, "optimizer_steps": 1, "optimizer_step_skipped": false}
+{"step": 2, "masked_ce": 10.481179237365723, "lr": 0.0003, "tokens_seen": 2048, "tokens_processed": 992, "tokens_scored": 39, "grad_norm": 31.031023025512695, "optimizer_steps": 2, "optimizer_step_skipped": false}
+{"step": 3, "masked_ce": 9.938179016113281, "lr": 0.0002604594154601839, "tokens_seen": 3072, "tokens_processed": 1344, "tokens_scored": 62, "grad_norm": 13.78856086730957, "optimizer_steps": 3, "optimizer_step_skipped": false, "val_masked_ce": 9.995150566101074}
+{"step": 4, "masked_ce": 9.953496932983398, "lr": 0.000165, "tokens_seen": 4096, "tokens_processed": 1792, "tokens_scored": 83, "grad_norm": 11.648788452148438, "optimizer_steps": 4, "optimizer_step_skipped": false}

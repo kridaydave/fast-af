@@ -1,0 +1,93 @@
+--- a/scripts/train_diffusion.py
++++ b/scripts/train_diffusion.py
+@@ -23 +22,0 @@
+-from contextlib import contextmanager
+@@ -242 +240,0 @@
+-            assert self._memmap is not None
+@@ -682 +680 @@
+-def evaluate(cfg, model, vocab, seq_len, batches: int | None = 8, device='cpu'):
++def evaluate(cfg, model, vocab, seq_len, batches=8, device='cpu'):
+@@ -736,14 +733,0 @@
+-@contextmanager
+-def d1_training_execution(supervision, device):
+-    """Dense CUDA branches require deterministic reductions for stable resume."""
+-    previous = torch.are_deterministic_algorithms_enabled()
+-    warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+-    if supervision == 'all-blocks' and device == 'cuda':
+-        os.environ.setdefault('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
+-        torch.use_deterministic_algorithms(True)
+-    try:
+-        yield
+-    finally:
+-        torch.use_deterministic_algorithms(previous, warn_only=warn_only)
+-
+-
+@@ -751,5 +734,0 @@
+-    with d1_training_execution(cfg.d1_supervision, cfg.device):
+-        return _train_distributed(cfg, resume, log)
+-
+-
+-def _train_distributed(cfg, resume, log):
+@@ -822 +800,0 @@
+-            assert corruption is not None
+@@ -834 +811,0 @@
+-                    'deterministic_algorithms': torch.are_deterministic_algorithms_enabled(),
+@@ -844 +820,0 @@
+-            assert corruption is not None
+--- a/scripts/benchmark_d1_parallel.py
++++ b/scripts/benchmark_d1_parallel.py
+@@ -22,2 +22 @@
+-    build_model, build_optimizer, model_masked_loss, optimizer_step, load_manifest, bundle_vocab, bundle_provenance,
+-    d1_training_execution)
++    build_model, build_optimizer, model_masked_loss, optimizer_step, load_manifest, bundle_vocab, bundle_provenance)
+@@ -34,7 +33,6 @@
+-    with d1_training_execution(supervision, 'cuda'):
+-        d = DistributedTraining(world_size, 'cuda')
+-        try:
+-            return measure(d, bundle, output, micro, backend, fused, mode, warmup,
+-                           window_updates, windows, wall_cap, supervision)
+-        finally:
+-            d.close()
++    d = DistributedTraining(world_size, 'cuda')
++    try:
++        return measure(d, bundle, output, micro, backend, fused, mode, warmup,
++                       window_updates, windows, wall_cap, supervision)
++    finally:
++        d.close()
+@@ -70 +67,0 @@
+-              'deterministic_algorithms': torch.are_deterministic_algorithms_enabled(),
+--- a/scripts/d1_model.py
++++ b/scripts/d1_model.py
+@@ -141 +141 @@
+-                         chunk_size=128, *, tensor_cores=False, collect_states=False, state_stride=None):
++                         chunk_size=128, *, tensor_cores=False, collect_states=False):
+@@ -160,3 +159,0 @@
+-        stride = chunk_size if state_stride is None else state_stride
+-        if type(stride) is not int or stride < 1 or chunk_size % stride:
+-            raise ValueError('state_stride must divide chunk_size')
+@@ -188,13 +184,0 @@
+-        # Recover interior block entry states from the same solved updates.
+-        # This keeps the clean scan at 128 tokens instead of launching a scan
+-        # step for every 32-token block. Mask BEFORE exp for strong decay.
+-        if collect_states and stride < chunk_size:
+-            ends = torch.arange(stride - 1, chunk_size - 1, stride, device=q.device)
+-            visible = torch.arange(chunk_size, device=q.device)[None, :] <= ends[:, None]
+-            relative = cumulative[..., ends, None] - cumulative[..., None, :]
+-            relative = relative.masked_fill(~visible, -torch.inf).exp()
+-            interior_keys = (k.unsqueeze(-3) * relative[..., None]).transpose(-1, -2)
+-            interior_decay = absolute_decay[..., ends, None, None]
+-            interiors = zip(interior_keys.unbind(2), interior_decay.unbind(2))
+-        else:
+-            interiors = iter(())
+@@ -210,5 +193,0 @@
+-            if collect_states and stride < chunk_size:
+-                middle_keys, middle_decay = next(interiors)
+-                expanded = updates.unsqueeze(2).expand(*middle_keys.shape[:-2], chunk_size, value_dim)
+-                middle = state.unsqueeze(2) * middle_decay + mm(middle_keys, expanded)
+-                states.extend(middle.unbind(2))
+@@ -388,3 +367,2 @@
+-                *clean_args, chunk_size=max(128, block) if block & (block - 1) == 0 else block,
+-                tensor_cores=self.backend == 'chunk-tc', collect_states=True, state_stride=block)
+-        initial = torch.stack(entries[:count], dim=1).flatten(0, 1)
++                *clean_args, chunk_size=block, tensor_cores=self.backend == 'chunk-tc', collect_states=True)
++        initial = torch.stack(entries, dim=1).flatten(0, 1)

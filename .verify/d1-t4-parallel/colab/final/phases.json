@@ -1,0 +1,12 @@
+[
+  {
+    "phase": "parity",
+    "exit_code": 0,
+    "seconds": 17.92070528599993
+  },
+  {
+    "phase": "resume",
+    "exit_code": 124,
+    "seconds": 180.2120297309998
+  }
+]

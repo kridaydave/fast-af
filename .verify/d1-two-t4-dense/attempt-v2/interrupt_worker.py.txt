@@ -1,0 +1,12 @@
+import json,sys,time
+sys.path.insert(0, '/kaggle/working/d1-dense-qualification/src')
+from scripts import train_diffusion as trainer
+original_train = trainer.train
+def train(cfg, resume=None, log=print):
+    def observed(line):
+        print(line, flush=True)
+        if isinstance(line, str) and line.startswith("{") and json.loads(line).get("step") == 4:
+            while True: time.sleep(1)
+    return original_train(cfg, resume=resume, log=observed)
+trainer.train = train
+trainer.main()

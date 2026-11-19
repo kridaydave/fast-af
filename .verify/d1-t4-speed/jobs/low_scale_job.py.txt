@@ -1,0 +1,34 @@
+import sys,time,json,gc,hashlib,traceback
+from pathlib import Path
+import torch
+sys.path.insert(0,'/content/d1-speed/src')
+from scripts import check_gdn_t4 as check
+from scripts.train_diffusion import load_checkpoint
+root=Path('/content/d1-speed');out=root/'low-scale.json';start=time.monotonic()
+while not (root/'p0-done.json').exists():
+ if time.monotonic()-start>1800:raise TimeoutError('P0/overhead did not finish within wait cap')
+ time.sleep(1)
+report={'status':'RUNNING','purpose':'verify parity and process resume at the scale reached by production warmup','checks':{},'source_sha256':{f:hashlib.sha256((root/'src/scripts'/f).read_bytes()).hexdigest() for f in ('d1_model.py','train_diffusion.py','check_gdn_t4.py','check_d1_p0.py')}}
+try:
+ assert json.loads((root/'p0-done.json').read_text())['exit_code']==0,'P0/overhead failed'
+ assert torch.cuda.get_device_name()=='Tesla T4' and torch.cuda.get_device_capability()==(7,5)
+ report.update(gpu=torch.cuda.get_device_name(),torch=torch.__version__,cuda=torch.version.cuda)
+ torch.set_num_threads(1);torch.backends.cuda.matmul.allow_tf32=False;torch.backends.cudnn.allow_tf32=False
+ payload=load_checkpoint(root/'p0-run/checkpoint-000200.pt')
+ scale=float(payload['scaler']['scale']);report['p0_final_scaler']=payload['scaler']
+ report['p0_checkpoint_bytes']=(root/'p0-run/checkpoint-000200.pt').stat().st_size
+ report['p0_checkpoint_sha256']=(root/'p0-run/checkpoint-000200.pt.sha256').read_text().strip()
+ del payload;gc.collect()
+ check.AMP_INIT_SCALE=scale
+ report['amp_init_scale_override']=scale
+ isolated=root/'low-scale-run';isolated.mkdir(exist_ok=True)
+ (isolated/'src').symlink_to(root/'src',target_is_directory=True)
+ report['checks']['layer']=check.layer_parity()
+ report['checks']['full_model']=check.full_parity()
+ report['checks']['resume']=check.resume_check(isolated)
+ report['status']='PASS';code=0
+except Exception as error:
+ report.update(status='FAIL',error=str(error),traceback=traceback.format_exc());code=1
+ print(report['traceback'],flush=True)
+out.write_text(json.dumps(report,indent=2)+'\n')
+raise SystemExit(code)

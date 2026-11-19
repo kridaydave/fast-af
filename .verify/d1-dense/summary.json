@@ -1,0 +1,87 @@
+{
+  "hardware": {
+    "gpu": "Tesla T4",
+    "capability": [
+      7,
+      5
+    ],
+    "total_memory": 15637086208,
+    "devices": 1,
+    "torch": "2.14.1+cu130",
+    "cuda": "13.0",
+    "nvidia_smi": "Sun Nov 15 18:02:05 2026       \n+-----------------------------------------------------------------------------------------+\n| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |\n+-----------------------------------------+------------------------+----------------------+\n| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\n| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\n|                                         |                        |               MIG M. |\n|=========================================+========================+======================|\n|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |\n| N/A   66C    P8             16W /   70W |       3MiB /  15360MiB |      0%      Default |\n|                                         |                        |                  N/A |\n+-----------------------------------------+------------------------+----------------------+\n\n+-----------------------------------------------------------------------------------------+\n| Processes:                                                                              |\n|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |\n|        ID   ID                                                               Usage      |\n|=========================================================================================|\n|  No running processes found                                                             |\n+-----------------------------------------------------------------------------------------+\n"
+  },
+  "baseline": {
+    "file": "colab/frontier-micro8-final.json",
+    "status": "PASS",
+    "params": 109137632,
+    "context": 1024,
+    "global_batch": 64,
+    "micro": 8,
+    "deterministic_algorithms": false,
+    "timed_updates": 3,
+    "timed_seconds": 12.918169937999892,
+    "consumed_tokens_per_second": 15219.49323655055,
+    "processed_tokens_per_second": 8184.441024342939,
+    "scored_tokens_per_second": 245.54561638559136,
+    "scored_rate_range": [
+      227.72054798738492,
+      278.82947363049203
+    ],
+    "peak_allocated_gib": 11.793327808380127,
+    "peak_reserved_gib": 13.12890625,
+    "timed_skips": 0
+  },
+  "selected": {
+    "file": "colab/all-blocks-micro2-final.json",
+    "status": "PASS",
+    "params": 109137632,
+    "context": 1024,
+    "global_batch": 64,
+    "micro": 2,
+    "deterministic_algorithms": true,
+    "timed_updates": 3,
+    "timed_seconds": 66.18063449299984,
+    "consumed_tokens_per_second": 2970.778408309094,
+    "processed_tokens_per_second": 5941.556816618188,
+    "scored_tokens_per_second": 1473.195304743,
+    "scored_rate_range": [
+      1463.1777815605462,
+      1493.5494051759167
+    ],
+    "peak_allocated_gib": 7.577412128448486,
+    "peak_reserved_gib": 7.818359375,
+    "timed_skips": 0
+  },
+  "screen_micro4": {
+    "file": "colab/all-blocks-micro4-final.json",
+    "status": "PASS",
+    "params": 109137632,
+    "context": 1024,
+    "global_batch": 64,
+    "micro": 4,
+    "deterministic_algorithms": true,
+    "timed_updates": 3,
+    "timed_seconds": 61.694280781000316,
+    "consumed_tokens_per_second": 3186.8107952811793,
+    "processed_tokens_per_second": 6373.6215905623585,
+    "scored_tokens_per_second": 1585.8196053422519,
+    "scored_rate_range": [
+      1569.2615538681534,
+      1599.3771651489374
+    ],
+    "peak_allocated_gib": 13.152714729309082,
+    "peak_reserved_gib": 13.78125,
+    "timed_skips": 0
+  },
+  "selected_supervision_speedup": 5.999680737242627,
+  "micro4_supervision_speedup": 6.458350300385603,
+  "selection_reason": "Micro 2 retains the 85% device-memory safety margin; micro 4 exceeds it for only a small throughput gain.",
+  "source_alignment": "Seven delivered scripts are byte-identical to colab/measured-scripts.",
+  "limitations": [
+    "Single real T4 only; dense two-T4 throughput and process-resume unmeasured.",
+    "One warmup and three timed successful updates per final configuration; screen, not production P0.",
+    "GPU CPU-reference gradients cover a 65-parameter-tensor small hybrid; full 109M context-1024 GPU forward/cache and process-resume passed, not full CPU gradient parity.",
+    "Supervised target throughput is not a multiplier on convergence or quality; broad-base data and quality remain unqualified."
+  ]
+}

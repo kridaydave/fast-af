@@ -1,0 +1,17 @@
+[
+  {
+    "name": "dense-resume-det",
+    "exit_code": 0,
+    "elapsed_seconds": 123.60285600700001
+  },
+  {
+    "name": "frontier-micro8",
+    "exit_code": 0,
+    "elapsed_seconds": 160.68756792600004
+  },
+  {
+    "name": "all-blocks-micro1",
+    "exit_code": 124,
+    "elapsed_seconds": 370.928437958
+  }
+]

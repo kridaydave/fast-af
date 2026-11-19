@@ -1,0 +1,5 @@
+{"model": "d1", "params": 522740, "backend": {"name": "torch-reference", "torch": "2.15.0+cpu"}, "metric": "masked_ce"}
+{"step": 1, "masked_ce": 10.37310791015625, "lr": 0.0003, "tokens_seen": 1024, "tokens_processed": 224, "tokens_scored": 5, "grad_norm": 2.870565414428711, "optimizer_steps": 1, "optimizer_step_skipped": false}
+{"step": 2, "masked_ce": 10.380595207214355, "lr": 0.0003, "tokens_seen": 2048, "tokens_processed": 1024, "tokens_scored": 32, "grad_norm": 1.1155846118927002, "optimizer_steps": 2, "optimizer_step_skipped": false}
+{"step": 3, "masked_ce": 10.365684509277344, "lr": 0.0002604594154601839, "tokens_seen": 3072, "tokens_processed": 1408, "tokens_scored": 51, "grad_norm": 1.2192133665084839, "optimizer_steps": 3, "optimizer_step_skipped": false}
+{"step": 4, "masked_ce": 10.361248970031738, "lr": 0.000165, "tokens_seen": 4096, "tokens_processed": 2304, "tokens_scored": 74, "grad_norm": 1.3907657861709595, "optimizer_steps": 4, "optimizer_step_skipped": false}

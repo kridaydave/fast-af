@@ -1,0 +1,944 @@
+{
+  "status": "PASS",
+  "gpu": "Tesla T4",
+  "torch": "2.14.1+cu130",
+  "cuda": "13.0",
+  "backend": {
+    "name": "torch-chunked-tensorcore",
+    "version": "3",
+    "chunk_size": "128",
+    "short_chunk": "power-of-two",
+    "matmul": "fp16-input-fp32-output-and-gradient",
+    "state_solve": "fp32",
+    "residual": "fp32",
+    "norm": "fp32-input-and-weight",
+    "torch": "2.14.1+cu130"
+  },
+  "context": 1024,
+  "params": 109137632,
+  "mode": "fp16 autocast; CPU reference FP32",
+  "cpu_full_output": {
+    "relative_l2": 0.002053145663287627,
+    "max_abs": 0.006825923919677734,
+    "reference_l2": 2890.7333984375,
+    "allowed_relative": 0.03,
+    "allowed_absolute_l2": 1e-05
+  },
+  "cpu_cached_output": {
+    "relative_l2": 0.0020656118739086136,
+    "max_abs": 0.0069443583488464355,
+    "reference_l2": 2890.7333984375,
+    "allowed_relative": 0.03,
+    "allowed_absolute_l2": 1e-05
+  },
+  "full_cached_output": {
+    "relative_l2": 0.001992654093951583,
+    "max_abs": 0.007061004638671875,
+    "reference_l2": 2890.594482421875,
+    "allowed_relative": 0.003,
+    "allowed_absolute_l2": 1e-05
+  },
+  "states": [
+    {
+      "layer": 0,
+      "cpu": [
+        {
+          "relative_l2": 0.0007991578431473724,
+          "max_abs": 1.947535201907158e-05,
+          "reference_l2": 0.7797190546989441,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.00035815944115398225,
+          "max_abs": 0.0005981922149658203,
+          "reference_l2": 18.93619728088379,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.00033816207796743923,
+          "max_abs": 0.0006129741668701172,
+          "reference_l2": 19.817806243896484,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.00035400327311806807,
+          "max_abs": 0.0008120536804199219,
+          "reference_l2": 28.022113800048828,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0003329982357940262,
+          "max_abs": 1.0506715625524521e-05,
+          "reference_l2": 0.7797099947929382,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0,
+          "max_abs": 0.0,
+          "reference_l2": 18.936609268188477,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0,
+          "max_abs": 0.0,
+          "reference_l2": 19.818140029907227,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0,
+          "max_abs": 0.0,
+          "reference_l2": 28.021984100341797,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 1,
+      "cpu": [
+        {
+          "relative_l2": 0.0010458161355303328,
+          "max_abs": 1.4777528122067451e-05,
+          "reference_l2": 0.5174897909164429,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0006285372401265808,
+          "max_abs": 0.0011715888977050781,
+          "reference_l2": 19.617782592773438,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0005921783099153073,
+          "max_abs": 0.0012298822402954102,
+          "reference_l2": 19.878679275512695,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0006254750431635791,
+          "max_abs": 0.0011343955993652344,
+          "reference_l2": 28.140560150146484,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0008935642808363723,
+          "max_abs": 1.7280690371990204e-05,
+          "reference_l2": 0.5174978971481323,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0005086699735323703,
+          "max_abs": 0.0009765625,
+          "reference_l2": 19.61783218383789,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.000508154813148356,
+          "max_abs": 0.0009765625,
+          "reference_l2": 19.877899169921875,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0005039172254384694,
+          "max_abs": 0.0009765625,
+          "reference_l2": 28.14068603515625,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 2,
+      "cpu": [
+        {
+          "relative_l2": 0.001270278830762398,
+          "max_abs": 2.4073757231235504e-05,
+          "reference_l2": 0.7727662920951843,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0007574275479273496,
+          "max_abs": 0.001191258430480957,
+          "reference_l2": 19.388437271118164,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0007751083282066857,
+          "max_abs": 0.0014981627464294434,
+          "reference_l2": 19.52776336669922,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0007568544733895167,
+          "max_abs": 0.001341402530670166,
+          "reference_l2": 27.744895935058594,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.001193678337816452,
+          "max_abs": 2.240436151623726e-05,
+          "reference_l2": 0.7727480530738831,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0006657186385912359,
+          "max_abs": 0.0009765625,
+          "reference_l2": 19.38817596435547,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0006855464161999892,
+          "max_abs": 0.0009765625,
+          "reference_l2": 19.52773094177246,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0006969679050912861,
+          "max_abs": 0.001338958740234375,
+          "reference_l2": 27.744762420654297,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 3,
+      "cpu": [
+        {
+          "relative_l2": 0.0009216497268624558,
+          "max_abs": 0.0025406479835510254,
+          "reference_l2": 182.1627197265625,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0009228215636517068,
+          "max_abs": 0.0023571252822875977,
+          "reference_l2": 183.8650360107422,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0008467185630355416,
+          "max_abs": 0.001953125,
+          "reference_l2": 182.16346740722656,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.000844313228619875,
+          "max_abs": 0.001953125,
+          "reference_l2": 183.86590576171875,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 4,
+      "cpu": [
+        {
+          "relative_l2": 0.0016871127286582639,
+          "max_abs": 5.4454198107123375e-05,
+          "reference_l2": 1.0659370422363281,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0010748217375382383,
+          "max_abs": 0.0023136138916015625,
+          "reference_l2": 20.20409393310547,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0010504839634690273,
+          "max_abs": 0.0019468069076538086,
+          "reference_l2": 19.65190315246582,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0010783452406835186,
+          "max_abs": 0.001998007297515869,
+          "reference_l2": 27.796695709228516,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0016126245182315972,
+          "max_abs": 5.3091440349817276e-05,
+          "reference_l2": 1.065914273262024,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0009755824819915357,
+          "max_abs": 0.001953125,
+          "reference_l2": 20.20362663269043,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0009680238079865389,
+          "max_abs": 0.001953125,
+          "reference_l2": 19.652389526367188,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.000991389752687826,
+          "max_abs": 0.0020751953125,
+          "reference_l2": 27.796367645263672,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 5,
+      "cpu": [
+        {
+          "relative_l2": 0.0018247668738898756,
+          "max_abs": 4.082161467522383e-05,
+          "reference_l2": 0.7372228503227234,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0011827169359683446,
+          "max_abs": 0.002227991819381714,
+          "reference_l2": 20.354663848876953,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0012068851335839334,
+          "max_abs": 0.002611696720123291,
+          "reference_l2": 19.395185470581055,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0011795605266306651,
+          "max_abs": 0.0025972723960876465,
+          "reference_l2": 27.78464126586914,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0017486722497397438,
+          "max_abs": 5.110749043524265e-05,
+          "reference_l2": 0.7372250556945801,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0010740148423371968,
+          "max_abs": 0.001953125,
+          "reference_l2": 20.354045867919922,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0011344459334719336,
+          "max_abs": 0.001953125,
+          "reference_l2": 19.3950138092041,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0011324684209970796,
+          "max_abs": 0.00244140625,
+          "reference_l2": 27.783851623535156,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 6,
+      "cpu": [
+        {
+          "relative_l2": 0.0019888294120142167,
+          "max_abs": 5.0323083996772766e-05,
+          "reference_l2": 0.8399648070335388,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.001299767267568285,
+          "max_abs": 0.0028093457221984863,
+          "reference_l2": 19.652385711669922,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0012691359652151708,
+          "max_abs": 0.0022492408752441406,
+          "reference_l2": 20.044586181640625,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0013414584330587887,
+          "max_abs": 0.002505183219909668,
+          "reference_l2": 28.163028717041016,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0019215508717705951,
+          "max_abs": 6.105052307248116e-05,
+          "reference_l2": 0.8399389982223511,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0012323169919447629,
+          "max_abs": 0.002197265625,
+          "reference_l2": 19.6518611907959,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0012563179440979193,
+          "max_abs": 0.0020751953125,
+          "reference_l2": 20.044208526611328,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0012474047011753128,
+          "max_abs": 0.0029296875,
+          "reference_l2": 28.162822723388672,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 7,
+      "cpu": [
+        {
+          "relative_l2": 0.0013726117763959882,
+          "max_abs": 0.0032253265380859375,
+          "reference_l2": 182.9897918701172,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0013729626077376037,
+          "max_abs": 0.0034108757972717285,
+          "reference_l2": 183.85238647460938,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0012980334605261633,
+          "max_abs": 0.003173828125,
+          "reference_l2": 182.9883270263672,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0013045113805686482,
+          "max_abs": 0.0030517578125,
+          "reference_l2": 183.8531036376953,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 8,
+      "cpu": [
+        {
+          "relative_l2": 0.0023346887302844624,
+          "max_abs": 8.500833064317703e-05,
+          "reference_l2": 0.9497748017311096,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0014857672333434262,
+          "max_abs": 0.0025718510150909424,
+          "reference_l2": 20.03185272216797,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0015655300133148493,
+          "max_abs": 0.0027316808700561523,
+          "reference_l2": 19.404251098632812,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0015130618557982732,
+          "max_abs": 0.0029915571212768555,
+          "reference_l2": 28.34368133544922,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0022660162290990696,
+          "max_abs": 7.2515569627285e-05,
+          "reference_l2": 0.9497855305671692,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0014679537263020065,
+          "max_abs": 0.00249481201171875,
+          "reference_l2": 20.031673431396484,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0014913162957853616,
+          "max_abs": 0.00244140625,
+          "reference_l2": 19.403947830200195,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0014610361174401602,
+          "max_abs": 0.002685546875,
+          "reference_l2": 28.344974517822266,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 9,
+      "cpu": [
+        {
+          "relative_l2": 0.00248806021292388,
+          "max_abs": 0.0001305844634771347,
+          "reference_l2": 1.1173511743545532,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0016665654897949837,
+          "max_abs": 0.003459334373474121,
+          "reference_l2": 19.409320831298828,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.001642023841289821,
+          "max_abs": 0.002808213233947754,
+          "reference_l2": 20.03064727783203,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.001604153157727629,
+          "max_abs": 0.0030522942543029785,
+          "reference_l2": 28.072124481201172,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0024108550184889495,
+          "max_abs": 0.00010382849723100662,
+          "reference_l2": 1.1173362731933594,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.001657097872490237,
+          "max_abs": 0.0029296875,
+          "reference_l2": 19.40900993347168,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.001505714585416369,
+          "max_abs": 0.002685546875,
+          "reference_l2": 20.03002166748047,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.001570174460462328,
+          "max_abs": 0.0035400390625,
+          "reference_l2": 28.071683883666992,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 10,
+      "cpu": [
+        {
+          "relative_l2": 0.0025182954393256677,
+          "max_abs": 5.957530811429024e-05,
+          "reference_l2": 0.6855680346488953,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0016711000283934224,
+          "max_abs": 0.0026715099811553955,
+          "reference_l2": 19.784929275512695,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0015894409845167083,
+          "max_abs": 0.00296938419342041,
+          "reference_l2": 20.58279037475586,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0017263214677580583,
+          "max_abs": 0.003951556980609894,
+          "reference_l2": 28.520036697387695,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0024680853718095606,
+          "max_abs": 5.245010834187269e-05,
+          "reference_l2": 0.6855552196502686,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0016081406305492646,
+          "max_abs": 0.0029296875,
+          "reference_l2": 19.78491973876953,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0015297690606569626,
+          "max_abs": 0.00390625,
+          "reference_l2": 20.58404541015625,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0016070230981737401,
+          "max_abs": 0.0032958984375,
+          "reference_l2": 28.520099639892578,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 11,
+      "cpu": [
+        {
+          "relative_l2": 0.0017169068808432309,
+          "max_abs": 0.004467472434043884,
+          "reference_l2": 182.79042053222656,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0017067666401652702,
+          "max_abs": 0.004092484712600708,
+          "reference_l2": 182.63999938964844,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0016443386527867979,
+          "max_abs": 0.004150390625,
+          "reference_l2": 182.79022216796875,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.001643560490885074,
+          "max_abs": 0.004638671875,
+          "reference_l2": 182.64073181152344,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 12,
+      "cpu": [
+        {
+          "relative_l2": 0.002730108684841194,
+          "max_abs": 5.3077004849910736e-05,
+          "reference_l2": 0.503392219543457,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0018925115210356596,
+          "max_abs": 0.003814220428466797,
+          "reference_l2": 20.25547981262207,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0020023171846992875,
+          "max_abs": 0.004027664661407471,
+          "reference_l2": 19.692195892333984,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0019796884659394032,
+          "max_abs": 0.003512561321258545,
+          "reference_l2": 28.147375106811523,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.002672938935936618,
+          "max_abs": 5.7976460084319115e-05,
+          "reference_l2": 0.5033488869667053,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0017419123888555862,
+          "max_abs": 0.003173828125,
+          "reference_l2": 20.255550384521484,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.001853046503714148,
+          "max_abs": 0.0032958984375,
+          "reference_l2": 19.690509796142578,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0018511910439250098,
+          "max_abs": 0.00390625,
+          "reference_l2": 28.146467208862305,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 13,
+      "cpu": [
+        {
+          "relative_l2": 0.0028949319245314725,
+          "max_abs": 8.725374937057495e-05,
+          "reference_l2": 0.759040117263794,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.001981689013743103,
+          "max_abs": 0.004716329276561737,
+          "reference_l2": 19.66901206970215,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.002111119665199332,
+          "max_abs": 0.003791123628616333,
+          "reference_l2": 19.34037971496582,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.002046446382264729,
+          "max_abs": 0.003834664821624756,
+          "reference_l2": 27.841142654418945,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0028187569340450947,
+          "max_abs": 8.705724030733109e-05,
+          "reference_l2": 0.7590753436088562,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.00191587546524889,
+          "max_abs": 0.00390625,
+          "reference_l2": 19.667978286743164,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0019721368804911216,
+          "max_abs": 0.00341796875,
+          "reference_l2": 19.339221954345703,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0018612068160802657,
+          "max_abs": 0.003662109375,
+          "reference_l2": 27.84239387512207,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 14,
+      "cpu": [
+        {
+          "relative_l2": 0.0029869833953185846,
+          "max_abs": 5.9481943026185036e-05,
+          "reference_l2": 0.4124196469783783,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.002049303439516537,
+          "max_abs": 0.00431370735168457,
+          "reference_l2": 20.252498626708984,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0021022301386732895,
+          "max_abs": 0.0040947794914245605,
+          "reference_l2": 19.827730178833008,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.00211024515829221,
+          "max_abs": 0.004071846604347229,
+          "reference_l2": 28.316303253173828,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0029244372872800468,
+          "max_abs": 4.881015047430992e-05,
+          "reference_l2": 0.4124316871166229,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0019387506252412426,
+          "max_abs": 0.0036773681640625,
+          "reference_l2": 20.250133514404297,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0019288082357465646,
+          "max_abs": 0.003662109375,
+          "reference_l2": 19.82709503173828,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.002009534270162691,
+          "max_abs": 0.0042724609375,
+          "reference_l2": 28.31679916381836,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    },
+    {
+      "layer": 15,
+      "cpu": [
+        {
+          "relative_l2": 0.002010413400300172,
+          "max_abs": 0.005193054676055908,
+          "reference_l2": 182.43130493164062,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.002001937584062108,
+          "max_abs": 0.005281984806060791,
+          "reference_l2": 182.561767578125,
+          "allowed_relative": 0.05,
+          "allowed_absolute_l2": 1e-05
+        }
+      ],
+      "full": [
+        {
+          "relative_l2": 0.0019327223712584782,
+          "max_abs": 0.004638671875,
+          "reference_l2": 182.4309844970703,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        },
+        {
+          "relative_l2": 0.0019308051050028053,
+          "max_abs": 0.00439453125,
+          "reference_l2": 182.5614471435547,
+          "allowed_relative": 0.005,
+          "allowed_absolute_l2": 1e-05
+        }
+      ]
+    }
+  ],
+  "wall_seconds": 14.546910213000046,
+  "source_sha256": {
+    "d1_model.py": "6b9456218ece8d0f3329e23bd386fc30729630354e9a325c9be58dacd05e7ecb",
+    "check_d1_cache_long.py": "3cee313824468010e38d127d2e1e7d69f83c91b5e8f43a06ff6772447933f416"
+  }
+}

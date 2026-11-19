@@ -1,0 +1,149 @@
+"""Bounded real two-T4 qualification of the delivered dense D1 training path."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import traceback
+import zipfile
+
+ROOT = Path('/kaggle/working/d1-dense-qualification')
+BACKEND = 'chunk-tc'
+
+
+def kill_tree(process):
+    """Kill owned descendants even when nested torchrun created a new session."""
+    pids = [process.pid]
+    for pid in pids:
+        children = Path(f'/proc/{pid}/task/{pid}/children')
+        try:
+            pids.extend(int(p) for p in children.read_text().split())
+        except FileNotFoundError:
+            pass
+    for pid in reversed(pids):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.wait(timeout=10)
+
+
+def run_phase(root, phases, name, args, cap, started, required=True):
+    remaining = 1100 - (time.monotonic() - started)
+    if remaining < cap:
+        row = {'phase': name, 'status': 'SKIP_BUDGET', 'remaining_seconds': remaining}
+        code = 125
+    else:
+        begin = time.monotonic()
+        env = dict(os.environ, CUBLAS_WORKSPACE_CONFIG=':4096:8', OMP_NUM_THREADS='1')
+        with (root / (name + '.log')).open('w') as log:
+            child = subprocess.Popen([sys.executable, '-u', *args], cwd=root / 'src',
+                                      stdout=log, stderr=subprocess.STDOUT,
+                                      start_new_session=True, env=env)
+            try:
+                code = child.wait(timeout=cap)
+            except subprocess.TimeoutExpired:
+                kill_tree(child)
+                code = 124
+            except BaseException:
+                kill_tree(child)
+                raise
+        row = {'phase': name, 'status': 'PASS' if code == 0 else 'FAIL',
+               'exit_code': code, 'seconds': time.monotonic() - begin,
+               'external_phase_cap_seconds': cap}
+    phases.append(row)
+    (root / 'phases.json').write_text(json.dumps(phases, indent=2) + '\n')
+    print(json.dumps(row), flush=True)
+    if code and required:
+        raise RuntimeError(f'{name}: qualification failed; see retained log')
+    return code
+
+
+def main(root=ROOT):
+    started = time.monotonic()
+    root = Path(root)
+    phases = []
+    hashes = {str(p.relative_to(root / 'src')): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in sorted((root / 'src' / 'scripts').glob('*.py'))}
+    (root / 'source-sha256.json').write_text(json.dumps(hashes, indent=2) + '\n')
+    result = {'status': 'RUNNING', 'supervision': 'all-blocks', 'backend': BACKEND,
+              'job_cap_seconds': 1100, 'requested_hardware': 'exactly two Tesla T4 / SM75',
+              'training': 'bounded qualification only; no long pretraining', 'phases': phases}
+    try:
+        # Probe hardware in a child so the controller holds no CUDA contexts.
+        hardware_code = '''import json,subprocess,torch
+from pathlib import Path
+r=Path.cwd().parent
+h={'torch':torch.__version__,'cuda':torch.version.cuda,'devices':[
+ {'name':torch.cuda.get_device_name(i),'capability':torch.cuda.get_device_capability(i),
+  'total_memory':torch.cuda.get_device_properties(i).total_memory}
+ for i in range(torch.cuda.device_count())]}
+if h['devices']:
+ h['nvidia_smi']=subprocess.run(['nvidia-smi'],capture_output=True,text=True).stdout
+ h['topology']=subprocess.run(['nvidia-smi','topo','-m'],capture_output=True,text=True).stdout
+(r/'hardware.json').write_text(json.dumps(h,indent=2)+'\\n')
+assert len(h['devices'])==2 and all(d['name']=='Tesla T4' and tuple(d['capability'])==(7,5) for d in h['devices']),h
+'''
+        run_phase(root, phases, 'hardware', ['-c', hardware_code], 30, started)
+        for backend in ('chunk', 'chunk-tc'):
+            name = backend + '-cpu-cache-parity'
+            run_phase(root, phases, name, ['scripts/check_d1_dense.py', '--phase', 'parity',
+                      '--backend', backend, '--root', str(root), '--out', str(root / (name + '.json'))],
+                      120, started)
+        # Execute the existing real-DDP gradient checker under production's
+        # deterministic dense execution policy; rank 0 has zero scored targets.
+        launcher = root / 'src' / 'dense_gradient_launcher.py'
+        launcher.write_text('import sys\nfrom scripts.train_diffusion import d1_training_execution\n'
+                            'from scripts.check_d1_parallel import gradient_check\n'
+                            'with d1_training_execution("all-blocks", "cuda"):\n'
+                            '    gradient_check(sys.argv[1], "chunk-tc", "all-blocks")\n')
+        run_phase(root, phases, 'ddp-gradients', ['-m', 'torch.distributed.run', '--standalone',
+                  '--nproc-per-node=2', str(launcher), str(root / 'ddp-gradients.json')], 120, started)
+        # Resume precedes timing; a performance failure cannot skip correctness.
+        run_phase(root, phases, 'ddp-resume', ['scripts/check_d1_parallel.py', '--phase', 'resume',
+                  '--backend', BACKEND, '--supervision', 'all-blocks', '--root', str(root),
+                  '--out', str(root / 'ddp-resume.json')], 360, started)
+        for name, devices, micro, required in [('single-micro2', 1, 2, True),
+                                             ('dual-micro4', 2, 4, True),
+                                             ('dual-micro2-matched', 2, 2, False)]:
+            args = ['scripts/benchmark_d1_parallel.py', '--bundle', str(root / 'src/probe-bundle'),
+                    '--out', str(root / (name + '.json')), '--world-size', str(devices),
+                    '--micro', str(micro), '--backend', BACKEND, '--fused',
+                    '--supervision', 'all-blocks', '--warmup', '1', '--windows', '3',
+                    '--window-updates', '1', '--wall-cap', '150']
+            if devices == 2:
+                args = ['-m', 'torch.distributed.run', '--standalone', '--nproc-per-node=2', *args]
+            run_phase(root, phases, name, args, 180, started, required=required)
+        result['status'] = 'PASS_REQUIRED_CHECKS'
+    except BaseException as error:
+        result.update(status='FAIL', error=str(error))
+        (root / 'failure.txt').write_text(traceback.format_exc())
+        print(traceback.format_exc(), flush=True)
+        raise
+    finally:
+        result['wall_seconds'] = time.monotonic() - started
+        (root / 'qualification.json').write_text(json.dumps(result, indent=2) + '\n')
+        # Model/optimizer checkpoints are test artifacts, not notebook outputs.
+        for name in ('full', 'interrupted', 'restarted'):
+            if (root / name).is_dir():
+                shutil.rmtree(root / name)
+        output = root.parent / 'd1-two-t4-reports.zip'
+        with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
+            for p in sorted(root.iterdir()):
+                if p.is_file() and p.suffix in ('.json', '.log', '.txt'):
+                    archive.write(p, p.name)
+            launcher = root / 'src' / 'dense_gradient_launcher.py'
+            if launcher.is_file():
+                archive.write(launcher, launcher.name)
+            interrupt = root / 'interrupt_worker.py'
+            if interrupt.is_file():
+                archive.write(interrupt, interrupt.name)
+        print('REPORTS:', output, flush=True)
+
+
+if __name__ == '__main__':
+    main()

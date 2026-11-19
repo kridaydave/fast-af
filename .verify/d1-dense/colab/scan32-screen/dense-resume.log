@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/content/d1-dense/src/scripts/check_d1_dense.py", line 112, in <module>
+    main()
+    ~~~~^^
+  File "/content/d1-dense/src/scripts/check_d1_dense.py", line 101, in main
+    report['checks'] = check_gdn_t4.resume_check(a.root, supervision='all-blocks')
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/d1-dense/src/scripts/check_gdn_t4.py", line 250, in resume_check
+    metric=comparison(value,other,1e-3,1e-5,f'optimizer {index} {key}')
+  File "/content/d1-dense/src/scripts/check_gdn_t4.py", line 43, in comparison
+    raise AssertionError(f'{label}: {result}')
+AssertionError: optimizer 6 exp_avg: {'relative_l2': 0.004811733117352191, 'max_abs': 2.445094651193358e-07, 'reference_l2': 0.0028457047883421183, 'allowed_relative': 0.001, 'allowed_absolute_l2': 1e-05}

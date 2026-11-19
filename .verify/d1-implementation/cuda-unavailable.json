@@ -1,0 +1,13 @@
+{
+  "status": "SKIP",
+  "device": "cuda",
+  "torch": "2.15.0+cpu",
+  "python": "3.14.8",
+  "cuda_available": false,
+  "timestamp": "2026-11-14T15:40:49.249579+00:00",
+  "checks": [],
+  "inputs": "synthetic clean vocabulary tokens",
+  "p0_measured": false,
+  "resume_checked": false,
+  "reason": "CUDA unavailable; no GPU checks ran"
+}

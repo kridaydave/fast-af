@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "measured_trainer_sha256": "9b9e560d2f3806794dcf3cdc00c2e657b263a922740824d2385dec3445f3248e",
+  "delivered_trainer_sha256": "b0cf1388b48f7258526fae5ad54a8a5a7e97801efa30d4223c8ede4f3058ce0a",
+  "module_ast_excluding_evaluate_before": "f38e0bee8b21997b4a66ad4fdff7feb267742451e3bde48a4180436be442af4d",
+  "module_ast_excluding_evaluate_after": "f38e0bee8b21997b4a66ad4fdff7feb267742451e3bde48a4180436be442af4d",
+  "only_changed_definition": "evaluate",
+  "production_p0_eval_every": 0,
+  "scope": "P0 never called evaluate; all remaining module AST, including the entire training loop, optimizer, masking, loaders and configuration, is identical. Fresh GPU integration checks cover the final evaluator delegation."
+}

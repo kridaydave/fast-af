@@ -428,7 +428,6 @@ def test_chat_eval_disables_duplicate_special_tokens_and_records_template_hash()
 
 
 def test_chat_generation_tokenizes_rendered_prompt_without_extra_bos():
-    from bench.backends import TransformersBackend
     import torch
 
     class Encoding(dict):

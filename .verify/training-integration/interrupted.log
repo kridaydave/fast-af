@@ -1,0 +1,4 @@
+{"step": 1, "loss": 48.8187113023551, "lr": 0.0003, "tokens_seen": 4096, "grad_norm": 39.487083435058594, "optimizer_steps": 1, "optimizer_step_skipped": false}
+{"step": 2, "loss": 47.04341830967859, "lr": 0.0003, "tokens_seen": 8192, "grad_norm": 49.80304718017578, "optimizer_steps": 2, "optimizer_step_skipped": false}
+{"step": 3, "loss": 47.61407759902458, "lr": 0.0002604594154601839, "tokens_seen": 12288, "grad_norm": 41.71293258666992, "optimizer_steps": 3, "optimizer_step_skipped": false, "val_loss": 45.266517639160156}
+{"step": 4, "loss": 42.237086695028964, "lr": 0.000165, "tokens_seen": 16384, "grad_norm": 54.566802978515625, "optimizer_steps": 4, "optimizer_step_skipped": false}

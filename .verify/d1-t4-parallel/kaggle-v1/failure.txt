@@ -1,0 +1,47 @@
+Traceback (most recent call last):
+  File "/kaggle/src/script.py", line 43, in <module>
+    phase(name,args,210)
+    ~~~~~^^^^^^^^^^^^^^^
+  File "/kaggle/src/script.py", line 25, in phase
+    if code and required:raise RuntimeError(f'{name} failed: '+(r/(name+'.log')).read_text()[-2500:])
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: baseline failed: ", line 146, in main
+    run(a.bundle, a.out, a.world_size, a.micro, a.backend, a.fused, a.mode,
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        a.warmup, a.window_updates, a.windows, a.wall_cap)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/kaggle/working/d1-opt/src/scripts/benchmark_d1_parallel.py", line 34, in run
+    return measure(d, bundle, output, micro, backend, fused, mode, warmup,
+                   window_updates, windows, wall_cap)
+  File "/kaggle/working/d1-opt/src/scripts/benchmark_d1_parallel.py", line 102, in measure
+    warm = [update() for _ in range(warmup)]
+            ~~~~~~^^
+  File "/kaggle/working/d1-opt/src/scripts/benchmark_d1_parallel.py", line 96, in update
+    scaler.scale(weighted).backward()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/_tensor.py", line 631, in backward
+    torch.autograd.backward(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        self, gradient, retain_graph, create_graph, inputs=inputs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/local/lib/python3.13/dist-packages/torch/autograd/__init__.py", line 381, in backward
+    _engine_run_backward(
+    ~~~~~~~~~~~~~~~~~~~~^
+        tensors,
+        ^^^^^^^^
+    ...<5 lines>...
+        accumulate_grad=True,
+        ^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/local/lib/python3.13/dist-packages/torch/autograd/graph.py", line 869, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        t_outputs, *args, **kwargs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )  # Calls into the C++ engine to run the backward pass
+    ^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 302.00 MiB. GPU 0 has a total capacity of 14.56 GiB of which 274.81 MiB is free. Process 7 has 134.00 MiB memory in use. Including non-PyTorch memory, this process has 14.16 GiB memory in use. Of the allocated memory 13.38 GiB is allocated by PyTorch, and 650.06 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)
+

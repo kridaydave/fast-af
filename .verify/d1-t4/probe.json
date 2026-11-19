@@ -1,0 +1,183 @@
+{
+  "phase": "probe",
+  "status": "PASS",
+  "python": "3.13.16",
+  "torch": "2.14.1+cu130",
+  "cuda": "13.0",
+  "checks": {
+    "probe": {
+      "params": 109137632,
+      "context": 1024,
+      "global_batch": 64,
+      "backend": "chunk",
+      "precision": "fp16 autocast; FP32 delta state/solve and optimizer",
+      "initial_scale": 256.0,
+      "max_updates": 24,
+      "wall_cap_seconds": 600.0,
+      "screens": [
+        {
+          "micro_batch": 1,
+          "status": "PASS",
+          "peak_allocated_bytes": 2679041536,
+          "peak_reserved_bytes": 2868903936,
+          "consumed": 65536,
+          "processed": 65536,
+          "scored": 1037,
+          "skipped": 0,
+          "masked_ce": 10.490356868350288,
+          "grad_norm": 27.844350814819336,
+          "seconds": 74.03064012100003
+        },
+        {
+          "micro_batch": 2,
+          "status": "PASS",
+          "peak_allocated_bytes": 4999242240,
+          "peak_reserved_bytes": 5112856576,
+          "consumed": 65536,
+          "processed": 65536,
+          "scored": 1091,
+          "skipped": 0,
+          "masked_ce": 10.220977058550504,
+          "grad_norm": 14.703110694885254,
+          "seconds": 37.61397501800002
+        },
+        {
+          "micro_batch": 4,
+          "status": "PASS",
+          "peak_allocated_bytes": 7946362368,
+          "peak_reserved_bytes": 8050966528,
+          "consumed": 65536,
+          "processed": 65536,
+          "scored": 987,
+          "skipped": 0,
+          "masked_ce": 9.346635281254576,
+          "grad_norm": 2.3147284984588623,
+          "seconds": 19.198974688000135
+        },
+        {
+          "micro_batch": 8,
+          "status": "PASS",
+          "peak_allocated_bytes": 13622438400,
+          "peak_reserved_bytes": 14019461120,
+          "consumed": 65536,
+          "processed": 65536,
+          "scored": 1085,
+          "skipped": 0,
+          "masked_ce": 8.416377421787807,
+          "grad_norm": 2.218794345855713,
+          "seconds": 14.239655292999942
+        }
+      ],
+      "windows": [
+        {
+          "mode": "full-context",
+          "window": 0,
+          "updates": 2,
+          "seconds": 37.557352991000016,
+          "consumed": 131072,
+          "processed": 131072,
+          "scored": 2019,
+          "skipped": 0,
+          "consumed_tokens_per_second": 3489.9158103982777,
+          "processed_tokens_per_second": 3489.9158103982777,
+          "scored_tokens_per_second": 53.7577821441202,
+          "peak_allocated_bytes": 7942372864,
+          "peak_reserved_bytes": 14019461120
+        },
+        {
+          "mode": "full-context",
+          "window": 1,
+          "updates": 2,
+          "seconds": 37.478937965000114,
+          "consumed": 131072,
+          "processed": 131072,
+          "scored": 2123,
+          "skipped": 0,
+          "consumed_tokens_per_second": 3497.217560497638,
+          "processed_tokens_per_second": 3497.217560497638,
+          "scored_tokens_per_second": 56.6451483225745,
+          "peak_allocated_bytes": 7942372864,
+          "peak_reserved_bytes": 14019461120
+        },
+        {
+          "mode": "full-context",
+          "window": 2,
+          "updates": 2,
+          "seconds": 37.760892913999896,
+          "consumed": 131072,
+          "processed": 131072,
+          "scored": 2036,
+          "skipped": 0,
+          "consumed_tokens_per_second": 3471.104359171679,
+          "processed_tokens_per_second": 3471.104359171679,
+          "scored_tokens_per_second": 53.918216516674335,
+          "peak_allocated_bytes": 7942372864,
+          "peak_reserved_bytes": 14019461120
+        },
+        {
+          "mode": "uniform-frontier",
+          "window": 0,
+          "updates": 2,
+          "seconds": 22.386648717999833,
+          "consumed": 131072,
+          "processed": 71040,
+          "scored": 2074,
+          "skipped": 0,
+          "consumed_tokens_per_second": 5854.918333292667,
+          "processed_tokens_per_second": 3173.3199950951466,
+          "scored_tokens_per_second": 92.64450548743432,
+          "peak_allocated_bytes": 7917363712,
+          "peak_reserved_bytes": 14019461120
+        },
+        {
+          "mode": "uniform-frontier",
+          "window": 1,
+          "updates": 2,
+          "seconds": 19.564722341000106,
+          "consumed": 131072,
+          "processed": 62208,
+          "scored": 2040,
+          "skipped": 0,
+          "consumed_tokens_per_second": 6699.405067728648,
+          "processed_tokens_per_second": 3179.600452066526,
+          "scored_tokens_per_second": 104.26930494816926,
+          "peak_allocated_bytes": 7926383104,
+          "peak_reserved_bytes": 14019461120
+        },
+        {
+          "mode": "uniform-frontier",
+          "window": 2,
+          "updates": 2,
+          "seconds": 18.485067637000157,
+          "consumed": 131072,
+          "processed": 56576,
+          "scored": 2039,
+          "skipped": 0,
+          "consumed_tokens_per_second": 7090.696262189656,
+          "processed_tokens_per_second": 3060.6325662967074,
+          "scored_tokens_per_second": 110.30524962314385,
+          "peak_allocated_bytes": 7216660992,
+          "peak_reserved_bytes": 14019461120
+        }
+      ],
+      "selected_micro_batch": 4,
+      "grad_accum": 16,
+      "updates_run": 20,
+      "wall_seconds": 378.28234300300005,
+      "validation_overhead_included": false,
+      "checkpoint_overhead_included": false,
+      "data_scope": "single verified real-token shard subset, cached local I/O; no long run"
+    }
+  },
+  "gpu": "Tesla T4",
+  "capability": [
+    7,
+    5
+  ],
+  "memory_bytes": 15637086208,
+  "source_sha256": {
+    "d1_model.py": "02916662d472d3c54be195f20b3d13e40468ea75fefd9aceaa474596a81ec755",
+    "train_diffusion.py": "3ad3ad7cc6afbfcaed3480a6a93c5715019a2a073670e16047aa3387fe48215a",
+    "check_gdn_t4.py": "31b4ac6f4689b3340c73524080f13da1131749e88257935f022675c11f7a6319"
+  }
+}

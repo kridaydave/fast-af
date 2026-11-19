@@ -1,0 +1,153 @@
+{
+  "status": "PASS",
+  "gpu": "Tesla T4",
+  "devices": 1,
+  "torch": "2.14.1+cu130",
+  "cuda": "13.0",
+  "params": 109137632,
+  "context": 1024,
+  "global_batch": 64,
+  "global_micro": 4,
+  "per_gpu_micro": 4,
+  "backend": "chunk-tc",
+  "fused_optimizer": true,
+  "mode": "uniform",
+  "supervision": "all-blocks",
+  "deterministic_algorithms": true,
+  "precision": "fp16 autocast; fp32 state/solve/optimizer",
+  "validation_included": false,
+  "checkpoint_included": false,
+  "provenance": {
+    "manifest_sha256": "85c0cbcfd4e161742439c11b803a0054bbde91528a09bb1582ac64e90dd51dd6",
+    "fingerprint": "ec6f6545c91ae536ed75e631f5d53f699703279477f913a753c53df51a1d8508",
+    "tokenizer_manifest_sha256": "5686f355f4332a73a8caa67910d4c52d798a7f361df1f35450ea0f4ed3b241b0",
+    "tokenizer_sha256": "5bb6b95687e59ae2c8a52c7ec8e664574aaffae8875f567a7335d9d666e3de0b",
+    "seq_len": 1024,
+    "shards": [
+      {
+        "split": "train",
+        "path": "train.bin",
+        "sha256": "3e2b6e538ff0ea10c3d309bd9bd89885237198708f9ab49abd4f838d6aa4ce84",
+        "tokens": 131072
+      },
+      {
+        "split": "validation",
+        "path": "validation.bin",
+        "sha256": "98731bb009f6433bc2bab4555b96cd57493ca10e35e5f5ca196c0ec7e48c7b66",
+        "tokens": 32768
+      }
+    ]
+  },
+  "source_sha256": {
+    "export_benchmarks.py": "79619bc112d61a47ed7ef6ff6abddf9ce544db84845c81ba3506ecd64897b0b9",
+    "data_prep_yours.py": "43f9afc99516a955581b72731da7e62d030a2ecfbed92249c875e7039871e896",
+    "check_d1_parallel.py": "9af5540127d1f7d33335c462f143a6797b0625f98d753a19ab3bc4a4c34c90b4",
+    "fetch_training_sources.py": "c67a02ee206a3ce45baeacb96f0338c2f0b1f18e921a675cf36b98eab46a7c5a",
+    "data_prep.py": "57d35b3b2b970bcfe5b297b43a1427b09f7b899c80bdb9b27d43965f66c42f4c",
+    "distributed_training.py": "bbbe99f349a19a336c9db86d1b4e1b32175f291f18fb54fdb147ea0ee27e5603",
+    "near_dedup.py": "4d07fe7d99cd2797df12ecab585c25adc970ec45f19ebbe10b7326f035973111",
+    "train_tokenizer.py": "3db40c6d793129f0987eb78f0d7f521b991a74e6b545502571dda3d8192f0b19",
+    "check_d1_p0.py": "910330a03f9abd4921c0c6d07424bf9c2905cbb173aa4e75a53284ce07651f96",
+    "evaluate_d1_checkpoint.py": "5db0d592ff264f94d2abacb4bfef30302bf15ec47a1676155ff5925fa1f7cea2",
+    "check_gdn_t4.py": "34c6b7e7f23a00bddc8393ca7691b6146af1c392c1ac759f760092360fac7364",
+    "d1_model.py": "5bc247634a9f12b5bfb1b597e3619c37b671971329657d8f132d1121fd4ae378",
+    "package_kaggle_probe.py": "9e77d1da48bf94c1e28824af1d448d0e74dae6317d2aa8040756f75751f3d69c",
+    "benchmark_d1_parallel.py": "0c37859c74117e05759c95c9e3db0e6e03b5a122aa4aa3347ba2add75d6cc0d3",
+    "profile_smoldlm_cache.py": "5ee916fbd4b38b27a278c16521543754102b83c0c107b8ddc20dc4163ead7c53",
+    "kaggle_t4_probe.py": "ed4a3319259396a5553093325c9fe0703c621bd077fd7f820de43a0588681b50",
+    "build_probe_bundle.py": "6fa740469202249107f639fcc84338ccd6e7d294d543ba19aa4400af85ce7076",
+    "check_d1_cache_long.py": "3cee313824468010e38d127d2e1e7d69f83c91b5e8f43a06ff6772447933f416",
+    "prepare_corpus.py": "e064595d0c47ebef450b45d22ab2f653f9b347d2d77965f757b605f5bbe6226b",
+    "build_training_mix.py": "c199dd08b3d6a43c8a0bdbd3ddd1ace8774bb48fcc9489c8db7ecfd92fe48130",
+    "audit_training_data.py": "df5020b5cb3083d4a1cb655a4723afeefa61017b07f9d4c92a08f66677f813fa",
+    "validate_d1.py": "4b14f94f37738f02b8fdd2b7fe368a1d7527c2cbe605bacc723a2667a0f03540",
+    "check_d1_dense.py": "ee01e5b20ee70b98765e54c6c0266f7bf3a858ef8633a7315c61131fff7390d6",
+    "train_diffusion.py": "9ad59cd135488eb11a92559cb3f27bfbe9e43c6d91a65c3ad535aed7cfa745da"
+  },
+  "windows": [
+    {
+      "window": 0,
+      "seconds": 20.92257974400013,
+      "gpu_seconds": 20.92257974400013,
+      "consumed": 65536,
+      "processed": 131072,
+      "scored": 32833,
+      "skipped": 0,
+      "updates": [
+        {
+          "consumed": 65536,
+          "processed": 131072,
+          "scored": 32833,
+          "skipped": 0,
+          "masked_ce": 10.163475009898578,
+          "grad_norm": 13.195046424865723
+        }
+      ],
+      "peak_allocated_per_rank": 14122619904,
+      "peak_reserved_per_rank": 14797504512,
+      "consumed_tokens_per_second": 3132.309724798322,
+      "processed_tokens_per_second": 6264.619449596644,
+      "scored_tokens_per_second": 1569.2615538681534
+    },
+    {
+      "window": 1,
+      "seconds": 20.421074348000047,
+      "gpu_seconds": 20.421074348000047,
+      "consumed": 65536,
+      "processed": 131072,
+      "scored": 32661,
+      "skipped": 0,
+      "updates": [
+        {
+          "consumed": 65536,
+          "processed": 131072,
+          "scored": 32661,
+          "skipped": 0,
+          "masked_ce": 9.68542757417103,
+          "grad_norm": 2.2901599407196045
+        }
+      ],
+      "peak_allocated_per_rank": 14117960192,
+      "peak_reserved_per_rank": 14797504512,
+      "consumed_tokens_per_second": 3209.2337005970658,
+      "processed_tokens_per_second": 6418.4674011941315,
+      "scored_tokens_per_second": 1599.3771651489374
+    },
+    {
+      "window": 2,
+      "seconds": 20.350626689000137,
+      "gpu_seconds": 20.350626689000137,
+      "consumed": 65536,
+      "processed": 131072,
+      "scored": 32342,
+      "skipped": 0,
+      "updates": [
+        {
+          "consumed": 65536,
+          "processed": 131072,
+          "scored": 32342,
+          "skipped": 0,
+          "masked_ce": 9.471785913054234,
+          "grad_norm": 2.0491585731506348
+        }
+      ],
+      "peak_allocated_per_rank": 14105862656,
+      "peak_reserved_per_rank": 14797504512,
+      "consumed_tokens_per_second": 3220.343088275671,
+      "processed_tokens_per_second": 6440.686176551342,
+      "scored_tokens_per_second": 1589.2385278474694
+    }
+  ],
+  "warmup": [
+    {
+      "consumed": 65536,
+      "processed": 131072,
+      "scored": 33188,
+      "skipped": 0,
+      "masked_ce": 10.49751416174521,
+      "grad_norm": 25.66871452331543
+    }
+  ],
+  "wall_seconds": 84.30195793300004,
+  "final_scale": 8.0
+}

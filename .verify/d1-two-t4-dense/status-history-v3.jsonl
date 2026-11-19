@@ -1,0 +1,4 @@
+{"utc": "2026-11-16T17:34:29.578951+00:00", "status": "QUEUED", "failure_message": "", "weekly_allowed_h": 30.0, "weekly_used_h": 0.23108805555555556, "provider_reserved_h": 0.0}
+{"utc": "2026-11-16T17:35:33.023778+00:00", "status": "QUEUED", "failure_message": "", "weekly_allowed_h": 30.0, "weekly_used_h": 0.23108805555555556, "provider_reserved_h": 0.0}
+{"utc": "2026-11-16T17:38:07.873744+00:00", "status": "QUEUED", "failure_message": "", "weekly_allowed_h": 30.0, "weekly_used_h": 0.23108805555555556, "provider_reserved_h": 0.0}
+{"utc": "2026-11-16T17:40:47.138460+00:00", "status": "QUEUED", "failure_message": "", "weekly_allowed_h": 30.0, "weekly_used_h": 0.23108805555555556, "provider_reserved_h": 0.0}
