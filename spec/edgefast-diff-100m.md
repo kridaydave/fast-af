@@ -1,10 +1,14 @@
-# EdgeFast-Diff 100M — block-diffusion hybrid spec (v3)
+# EdgeFast-Diff 100M: block-diffusion hybrid spec (v4)
+
+> **PROCESS APPROVED: TASKS AND FEEDBACK FIRST.** Kriday, 2026-11-17. Build verified Python tasks, prove the trainer, then compare the data recipes below. This approves the process; hardware readiness and model quality still require measurements.
+
+Revision 2026-11-17 supersedes the earlier ban on pretraining data experiments and int4 QAT from the start. The next experiment changes task data only. Looping, quantization, longer context, adaptive decoding and agentic RL remain separate later experiments.
 
 Revised 2026-11-01: target size retargeted from 1B to 100M (user call). With zero budget, the 100M is the real, trainable model — not just a pilot. A 1B scale-up stays future work if compute appears. Supersedes v2 of this spec (1B target) and `edgefast-1.5b.md` (AR edge model, kept for reference). Written 2026-10-28 after the hybrid-attention and diffusion-decoding research passes.
 
 ## Goal
 
-Maximum single-stream TPS. One guardrail: pass@1 on HumanEval tracked at every step, because a model that outputs garbage at 50k tok/s wins nothing.
+Maximum single-stream TPS at useful quality. During development, track unseen task-family correctness and per-bucket validation loss. HumanEval stays sealed for final D1 evaluation; the one fixed G0 baseline calibration below is the exception. Report speed and quality together under the same decode policy.
 
 The governing formula:
 
@@ -32,39 +36,80 @@ If D1 doesn't clearly beat B2, there is no reason for it to exist.
 | Component | Choice | Evidence |
 |---|---|---|
 | Linear layers (12) | Gated DeltaNet (GDN) | Delta-rule layers win recall: GDN-2 > GDN > KDA > Mamba-3 > Mamba-2 at 1.3B (arXiv:2605.22791). GDN ships in Qwen3-Next, kernels exist. GDN-2 is the stretch option once it matures. |
-| Attention layers (4) | Full attention, GQA 2 KV heads, head dim 128, NoPE | 3:1 ratio, uniformly interleaved (attention at blocks 4, 8, 12, 16). Recall saturates at 3:1 (arXiv:2507.06457); Kimi Linear measured 3:1 best PPL. Full attention on sparse layers is what every shipped hybrid uses; sliding window retracted (Waleffe et al. found windowed hybrids degrade past the window, arXiv:2406.07887). 5 query heads at d_model 640, so 2 KV heads keeps GQA a real saving. |
+| Attention layers (4) | Full attention, 5 query heads, 1 KV head, head dim 128, NoPE | 3:1 ratio, uniformly interleaved at blocks 4, 8, 12, 16. One KV head gives valid multi-query attention at d_model 640; the previous 5-query/2-KV configuration violated standard GQA divisibility. Recount parameters and verify the actual implementation before freezing. |
 | Placement | Uniform interleave | Waleffe et al.: no ordering beats evenly dispersed. |
 | FFN | SwiGLU, 8/3 expansion (1728, 64-multiple) | Standard. |
 | Norm | RMSNorm, pre-norm | Standard. |
 | Vocab / embeddings | 32k, tied | At 100M the table is a bigger share of the budget (~20M of ~105M); 32k tied keeps it affordable while covering code tokens. |
-| Train context | 32k | Mamba state is unbounded at constant cost; attention layers cache the prompt once. |
-| Precision | int4 QAT from the start | ~0.5-2pt quality cost for ~2x bandwidth ceiling. At 100M the quality cost of int4 hurts more than at 1B; if QAT degrades the pilot badly, fall back to fp16 and keep the speed win honest. |
+| Train context | 1024 initially | Matches the frozen smoke corpus. Longer context, up to the previous 32k target, requires a separate measured extension stage. |
+| Precision | Floating-point baseline first | On T4, validate FP16 mixed precision with gradient scaling and FP32 computation where recurrence or loss stability requires it. Int4 QAT is deferred until the baseline works. |
 
 ## Decoding
 
-Block-diffusion in the BD3-LM / fixed-state style (arXiv:2503.09573, arXiv:2609.11998):
+Block-diffusion in the BD3-LM / fixed-state style (arXiv:2503.09573, arXiv:2609.11998). Freeze one working policy for the task-data comparison. Early stopping, block overlap and adaptive decoding are disabled for that comparison; the mechanisms below are later candidates.
 
 - Block size 32 masked slots. LLaDA and the fixed-state paper both converge on 32.
 - 8-16 denoising steps per block, so ~2-4 tokens revealed per forward pass. NOT LLaDA's 512-step config, which is 1 token per pass and slower than AR. The LLaDA lesson: speed lives in the decode policy, not the architecture.
 - Unmasking: parallel with confidence threshold (0.9, Fast-dLLM style) rather than strict low-confidence sequential ordering. Measured TPS wins live here.
 - Early stopping (user idea, 2026-10-30): a separate block-level confidence score, checked once per round. Above 0.97, fill every remaining slot and finish the block, skipping the unused rounds. The two thresholds coexist cleanly: 0.9 governs individual tokens within a round, 0.97 governs whether the block continues at all. Block score defaults to the MIN confidence across remaining masked slots, not the mean, because a 97% average can hide one garbage slot and commit it. (Adjacent published work: Prophet early-stopping; block-score definition is ours.)
-- Block overlap (engineering, free): start the next block's first pass while the current block runs its last, so the GPU never idles between blocks. No quality cost.
+- Block overlap is deferred. Validate prefix dependencies, output quality and measured scheduling benefit before enabling it.
 - Deferred knobs, do not build yet: (a) adaptive rounds by difficulty — post-D1, fused with the L1 verification skill; difficulty is hard to define and can flip mid-generation, so it needs the model's own judgment rather than a static classifier (user call, 2026-10-30). (b) Adaptive block size (AdaBlock-dLLM) — noted as the trickier cousin of early stopping.
-- Few-round training: the model must be fine-tuned/distilled FOR the 4-8 round regime, not trained for many rounds then starved at decode time. Consistency-models-style: teach the model to land guesses early instead of hedging across rounds. Lives in training recipe step 2.
+- Few-round training is a separate speed-focused post-training experiment after useful correctness is established. Ordinary instruction tuning or test-filtered self-training does not establish good quality at 4-8 rounds.
 - Prompt encoded once and cached. Attention layers cross-attend the cached clean prefix; GDN layers carry a constant-size recurrent state across blocks. Training computes the clean prefix the same way inference does, so the cache is exact, not approximated.
 
-Back-of-envelope on T4: 100M int4 ≈ 0.06 GB per pass, T4 bandwidth ~320 GB/s → ~5,000 passes/s ceiling, times ~3 tokens per pass ≈ 15k tok/s paper math; expect a third of that after scheduling overhead and remasking waste. The fixed-state paper measured 297 tok/s single-stream for a 3B pure-Mamba block-diffusion model at 256k context, and 231 for the hybrid — at 8x smaller with the same decode trick, meaningfully higher than both is the target.
+Historical quantized bandwidth estimate, not a prediction for the first floating-point run: 100M int4 is roughly 0.06 GB per pass, giving about 5,000 passes/s at 320 GB/s before overhead. Actual TPS, useful tokens per pass and quality require measurement on the chosen backend. No training budget or pass condition is derived from this ceiling.
 
-## Training recipe (revised 2026-10-30: no budget, no teacher)
+## Training recipe: tasks and feedback first (approved 2026-11-17)
 
-User decisions on record: no paid teacher distillation (compute costs money), SFT stays, self-distillation after the base model replaces both teacher distillation and hard RLVR for v1.
+No paid teacher generation. Use deterministic task generators, human-reviewed references and suitable existing public examples with recorded provenance. Public instruction tuning stays; test-filtered self-training follows only when it produces useful verified solutions. Full repository agents and policy-gradient RL remain deferred.
 
-1. Pretrain ~2-10B tokens (code-heavy mix, FineWeb-Edu + code + math), block-diffusion objective, block size 32, context 1024 then extend. At 100M, a few billion tokens is the realistic free-tier budget (Kaggle T4, 30h/week); the fixed-state 3B trained on only 300B tokens with acceptable quality, so 100M on a few B tokens is not crazy. This IS the pretrain — there is no bigger run behind it. POLICY (user call, 2026-10-30): the pretrain is boring by design, proven defaults only, no experimental knobs, no data experiments. All experiments live in L1 and the decode policy. The only question the run answers is "does the recipe work at all."
-2. SFT on public instruction/code datasets (Magicoder / OSS-Instruct / Tulu class). These datasets are already teacher-distilled by their authors; we use the outputs without paying for the teacher. Few-round decode setting (4-8 rounds) applies here too. DATA HYGIENE (user call, 2026-10-30, "slop inheritance" worry): teacher-generated SFT data carries the teacher's tics (tool-call JSON, filler openers, emoji headers, agent-speak). Big models learn past the slop; a 100M model copies surface patterns, so it learns the slop AS the skill. Rules: small and clean over big and sloppy (LIMA lesson, target tens of millions of SFT tokens max); prefer sources seeded from real code over chat dumps; mechanically scrub tool-call traces, filler openers, and formatting slop before training; keep a general-chat slice in the mix; eval on non-code prompts during SFT.
-3. Self-distill (STaR / ReST style): model generates many solutions to generated problems, a sandbox runs the tests, only passing solutions become fine-tuning data, repeat. Tests are free judges. This is the v1 replacement for RLVR.
-4. RLVR (policy-gradient, tests as reward) stays a later-stage upgrade when compute exists. DiffuCoder's finding still on the table for that stage: RL post-training made the model tolerant of halved denoising steps, so RL buys competence AND speed.
+### 1. Build and audit the task environment
 
-Goodhart defense for the "test fixer" failure mode (model learns to pass tests without writing good code): many varied generated problems, test suites held out from training, quality filters beyond test-passing (dedup, length sanity), HumanEval never touched until final eval. Risk is managed, not eliminated; self-distillation is the mildest test-based training signal, which is part of why it beats hard RLVR for v1.
+Start with short, single-function Python tasks covering strings, lists, dictionaries, counting and small repairs. Each task records its description, starter code, reference solution, generator version, seed, skill family, provenance and verifier version. Keep complete task-and-solution examples within the initial context limit.
+
+- Require the reference solution to pass normal, boundary and independently authored hidden tests. Require plausible incorrect implementations to fail. For repairs, verify both fail-to-pass cases and preserved pass-to-pass behavior.
+- Example: deduplicate a list while preserving order. Include empty input and repeated values; reject solutions that sort or lose order.
+- Run candidates in isolated workers with enforced time and memory limits. Keep grading code and hidden tests outside candidate control. The existing in-process HumanEval executor is not the training sandbox.
+- Split by generator template, underlying solution structure and perturbation family before producing variants. Renamed variables or changed constants do not create independent evaluation tasks. Maintain separate training, development and sealed evaluation families, plus independently sourced transfer tasks.
+- Apply the existing HumanEval/MBPP decontamination to references, prompts and accepted model outputs. Neither suite supplies training rewards. Review ambiguous requirements, broken verifiers and repeated failure patterns before adding more tasks.
+
+### 2. Prove the trainer on the frozen corpus
+
+Use the existing training-v1 bundle, 99,983,360 training tokens, for a plumbing run. Keep it unchanged. Use an unlooped floating-point model, block size 32 and context 1024. Follow one published block-diffusion objective; freeze its corruption distribution, loss weighting and normalization, optimizer, learning-rate schedule, effective batch size, token budget and decode policy before the run.
+
+Implement causal clean history, bidirectional visibility within the active noisy block, and isolation from future blocks and other packed documents. Apply equivalent boundaries to recurrent state; an all-one padding mask is insufficient. Verify cached generation against the reference path. Test interruption/resume against an uninterrupted run, restoring the checkpoint contract below plus gradient-scaler state. Passing this run establishes plumbing, not competitive model quality.
+
+### 3. Run one controlled task-data pilot
+
+Hypothesis: early exposure to verified task-and-solution examples improves unseen Python-task correctness at matched training compute without unacceptable general-text regression.
+
+| Arm | Raw code | Verified Python task/solution examples | Web | Math |
+|---|---:|---:|---:|---:|
+| A: control | 50% | 0% | 35% | 15% |
+| B: task data | 40% | 10% | 35% | 15% |
+
+Fractions are by tokens. The 10% share is an experimental starting point. Task examples remain a separately indexed subtype inside the 50% code bucket. Store prompt/solution boundaries and task-family metadata alongside shards; do not imply the current three-bucket builder already implements this treatment.
+
+Start both arms from the same fresh initialization, using the same tokenizer, architecture, corruption/loss, optimizer schedule, effective batch, total tokens and decode policy. Keep shared source selection/order matched where possible and log the deliberate substitutions. Freeze unique pools, repetition schedules, seeds and hashes. Deduplicating the unique corpus does not prohibit documented multi-epoch training; report unique tokens and total exposure separately.
+
+Use a measured hardware probe to freeze an affordable budget before starting either arm, capped initially at 500M tokens per arm. This cap is a planning limit, not a measured feasibility claim. Require total training FLOPs within +/- 10% and report the ratio, GPU-hours and all evaluation/generation costs. Use two seeds if affordable; label a single-seed result low confidence. Do not combine this pilot with L1v2, QAT, context extension or decode-policy tuning.
+
+Before the pair starts, freeze the evaluation tasks, scoring, minimum useful gain, acceptable per-bucket regression limits and uncertainty method using development-only measurements. Promote B only if unseen-family correctness improves beyond that criterion, independent transfer tasks support the direction, and general-text/code/math validation stays within the frozen limits. Otherwise retain A or report inconclusive and diagnose. HumanEval remains sealed. This pilot uses its own task-data gate; it does not replace the L1v2 looping criteria.
+
+### 4. Instruction tuning and feedback
+
+Complete the selected full pretraining run within its measured, frozen budget, then instruction-tune on clean public code/instruction examples and verified references. Keep the initial SFT budget to tens of millions of tokens and freeze its exact size. Record data reuse, scrub irrelevant tool traces and formatting filler, keep a general-language slice, and evaluate non-code behavior. Preserve complete prompts and solutions during packing. Freeze whether prompts are corrupted and which response tokens contribute loss.
+
+Then measure solve rates by skill family and difficulty on training tasks. Start test-filtered self-training only when a predeclared minimum yield makes generation worthwhile. Generate with a frozen checkpoint, independently verify and deduplicate successes, record checkpoint IDs, then fine-tune on the accepted batch. Keep development and sealed evaluation families out of sampling and feedback. If yield is poor, improve references or task suitability rather than spending more on repeated failures.
+
+Adjust difficulty using observed solve rates while retaining skill diversity. Early supervised exposure to solved hard examples and selecting solvable rollout tasks are separate decisions; do not assume a universal easy-to-hard curriculum. Track novel verified successes per GPU-hour including rejected attempts, acceptance rate, timeout/invalid-code rate, repetition and per-family correctness. Test execution has CPU and wall-clock costs even without a paid judge.
+
+### Evidence and limits
+
+- [DeepSeek V4.1, section 5.1](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf): task/environment/verifier construction, difficulty calibration and quality re-auditing.
+- [Qwen3-Coder-Next](https://arxiv.org/html/2603.00729v1): executable tasks, bug/fix verification and complete-context packing.
+- [Falcon-H1-Tiny](https://tiiuae-tiny-h1-blogpost.hf.space/?__theme=system): early target-data exposure and controlled reuse at 90M. Its reported 800B-token schedule is far larger than ours and uses AR training; benefit at our diffusion scale/budget is unproven.
+- [Curriculum study](https://arxiv.org/html/2603.24202v1): difficulty and diversity affect RL learning at 8B/32B. Transfer to 100M and test-filtered self-training remains an experiment.
 
 ## Benchmark week (before any training)
 
@@ -98,8 +143,10 @@ EAGLE-3's original caveat stands: "budget a day of friction." That day is now sp
 Budget status (updated 2026-10-30): no training budget. Lightning AI's free GPU tier is gone. Everything runs on free tiers until credits or money appear.
 
 - Benchmarks run on Colab free T4 (16 GB, sm75, ~320 GB/s), chosen for ease of use. Identical silicon to Kaggle's T4, and the second T4 was never used (batch 1, one benchmark per GPU), so the original math is unchanged.
-- The 100M pretrain is the plan now (Kaggle T4 free tier), not a rehearsal for one. A 1B run (rented H100, ~$1-1.5k at 200-300B tokens) stays future work if credits or grants appear. The speed thesis (TPS) is fully testable at 100M; only 1B-scale pass@1 quality needs the bigger run.
-- Zero-budget sequencing: benchmark week on Colab → pretrain D1 (100M, same architecture as specced) free on Kaggle T4 (30h/week, checkpoints to Drive every N steps; Colab's short sessions make it bad for training) → with proof the physics works, apply for compute grants or rent for the 1B scale-up.
+- The 100M model remains the product target. Kaggle T4 training is a candidate hardware plan pending the compatibility and compute probe below. A 1B scale-up remains future work.
+- Current sequence: build/audit tasks and complete benchmark calibration; prove the exact training backend and resume behavior; run the controlled task-data pilot; freeze the full-run recipe and affordable token budget. Task generation and verification can proceed on CPU while hardware readiness is unresolved.
+
+**Training hardware gate, added 2026-11-17:** current [Triton requirements](https://github.com/triton-lang/triton) list NVIDIA compute capability 8.0+, while T4 is 7.5. Do not assume the modern GDN stack runs on T4. Pin the exact PyTorch, CUDA, kernel and optimizer versions; verify real forward/backward/optimizer steps, finite gradients, reference agreement and cache/state behavior on the intended GPU. Measure steady-state training tokens/s, peak memory, evaluation time and checkpoint overhead before setting budgets. If no correct, sufficiently fast T4 backend exists, report the block and revise hardware or architecture explicitly. CPU fallbacks do not establish GPU feasibility.
 
 T4 consequences (unchanged):
 
@@ -129,7 +176,7 @@ The 2026-10-30 L1 tied loop iterations to denoising steps and used equal TPS as 
 
 **MBPP template prerequisite (UNCONFIRMED in repo until done):** copy the exact few-shot/task template from arXiv 2108.07732 into the repo before the first MBPP run, freeze it, and record its text/hash in every results YAML. The 500-problem test split is confirmed (PAPER arXiv 2108.07732); which appendix holds the copyable template text is UNCONFIRMED until read from the paper itself. Do not invent or change the template mid-comparison.
 
-**Checkpoint and resume contract:** each checkpoint must include model, optimizer, scheduler, RNG states (Python, NumPy, PyTorch, CUDA), dataloader/shard cursor, global step, tokens seen, and config hash. Upload atomically and verify integrity. If a resume cannot prove equal effective tokens/steps/config for a twin comparison, mark that comparison invalid/inconclusive.
+**Checkpoint and resume contract:** each checkpoint must include model, optimizer, scheduler, gradient-scaler state when used, RNG states (Python, NumPy, PyTorch, CUDA), dataloader/shard cursor, global step, tokens seen, and config hash. Upload atomically and verify integrity. Verify interrupted/resumed training against an uninterrupted reference, including sample order and corruption RNG, under frozen numeric tolerances. If a resume cannot prove equal effective tokens/steps/config for a twin comparison, mark that comparison invalid/inconclusive.
 
 **Setup.** Two ~100M twins, same data, same optimizer family, same training plan, evaluated at T=16 and T=8 decode steps with the frozen decode policy: (A) unlooped control, S=1. (B) looped mid-block, 2 layers looped inside each denoising step, fixed S_train chosen before the run (default 4), S_decode swept {1,2,4}. Pilot budget: 500M tokens per arm (feasible pilot on free T4/Kaggle, ESTIMATE). 1B tokens per arm is allowed only if the week-2 probe and pipeline stability justify it. Do not run 3-5B tokens per arm as the first L1v2 pilot on free tiers (128-556 T4-h class, 4-19 weeks wall clock at 30 GPU-h/week, ESTIMATE). Use two seeds if affordable; a single-seed run must be labeled "single-seed, low confidence" and requires larger margins (below).
 
@@ -156,25 +203,31 @@ Training comparison is at matched total training FLOPs. Count one forward throug
 
 ## Risks
 
-- Benchmark contamination. HumanEval is the guardrail metric and RLVR rewards "tests pass." If HumanEval problems or solutions leak into pretrain, distill, SFT, or RLVR data, pass@1 becomes meaningless. Mitigations: hold HumanEval out of all training data entirely; use other coding tests (MBPP, generated problems) for RLVR reward; run n-gram overlap checks between training corpus and HumanEval before training; touch HumanEval only at final eval.
+- Benchmark contamination. Keep HumanEval and MBPP out of all training examples, generated references, self-training outputs and rewards. Use separate verified task families for training feedback and development, with sealed families for evaluation. Apply the existing overlap checks at every data-producing stage; zero detected overlap does not prove semantic independence. HumanEval is final-only for D1, apart from the fixed G0 baseline calibration.
 - Code-biased pretrain. A code-heavy mix can make the base model spit code even for normal chat prompts ("hello" -> code). Mitigations: keep general text (FineWeb-Edu, books) in the pretrain mix, not just code; rely on SFT to teach chat/instruction behavior; eval on non-code prompts during training. First-time pretraining: start with a smaller pilot run to sanity-check output behavior before full budget.
 - Few-step quality cliff. Generative PPL degrades steeply below ~8 steps (15.3 at 4 steps vs 6.4 at 32 in the fixed-state paper). Steps are the speed-quality dial; the spec's 8-16 range is a bet, not a fact.
 - Long-context recall. The fixed-state paper's passkey scores are weak at 16k for all mixers (undertrained at 1024 context, but unproven). Our 3:1 ratio exists for this; watch it.
 - Adaptive steps per block (more steps for hard code, fewer for boilerplate) has no paper making it the headline mechanism. Either a trap or our edge. AdaBlock-dLLM does adaptive block size, Prophet does early stopping; steps-per-difficulty is unclaimed.
-- Diffusion RLVR immaturity could block the competence half. If it stalls, fallback is distillation-only with the competence bar lowered for v1.
-- Diffusion + tool calling. Interactive RL (slime-style) needs multi-turn tool use, which diffusion (block generation) handles poorly vs AR. v1 stays single-shot code RL: model generates code, sandbox runs it, reward from execution. Defer interactive/agentic RL to v2.
+- Feedback yield. A weak model may produce too few correct, novel solutions to justify self-training. Measure accepted solutions per GPU-hour and retain supervised references if yield is inadequate. Test-filtered self-training has no established speed benefit by itself.
+- Diffusion + tool calling. v1 trains single-function code generation and repairs with external execution-based verification. It does not introduce interactive tool-use RL. Repository agents and policy-gradient RL remain deferred.
 - First-time pretrainer. Kriday has never pretrained before. Risk of wasted compute and bad decisions. Mitigations: pilot runs on small budgets first; read and understand each stage before running; no blind "vibe-pretraining."
 - Vibe-pretraining risk. Ad-hoc pretraining (random data mix, no evals, no ablations) produces a model nobody understands. Mitigations: every run has a written hypothesis, a metric, and a kill criterion before it starts; results logged; no "just try it" runs on full budget.
 - No tool-calling integrated training. v1 does not train tool use at all. If the product later needs agents, that's a separate capability, not bolted onto this model.
-- Process gate. Kriday must understand every part of the puzzle before work continues. No week or stage proceeds until explained and agreed. If unclear, stop and explain in simple terms before acting.
+- Process gate. Kriday approved this staged process on 2026-11-17. Stage progression depends on the recorded measurements and prerequisites; process approval does not mark a gate passed. Explain material changes to the agreed scope, architecture or budget before adopting them.
 
-## Pretrain data (decided 2026-11-01)
+## Pretrain data (updated 2026-11-17)
 
-Three buckets, user-approved: general web = FineWeb-Edu (`sample-10BT` slice); code = The Stack Dedup, Python subset (mined); math = FineMath or OpenWebMath. Mix for the ~3-5B token run: ~50% code / ~35% web / ~15% math (web stays a third — the cure for code-biased pretrain). Decontamination (n-gram check vs HumanEval) runs inside the prep script on everything. SFT data (Magicoder class) is recipe step 2, separate from this. Tokenizer: train our own 32k BPE on a corpus sample (decided 2026-11-06: train our own). Workflow: ~100MB samples locally to build/test the prep script, full downloads on Colab/Kaggle where training happens.
+Keep the frozen training-v1 corpus and custom 32k byte-level BPE tokenizer for the plumbing run. Pinned sources are The Stack Dedup Python, FineWeb-Edu sample-10BT and FineMath finemath-4plus; preparation and audits are documented in [TRAINING_DATA.md](../docs/TRAINING_DATA.md).
+
+The approved pilot compares the current 50/35/15 token mix with the 40/10/35/15 raw-code/task-code/web/math treatment above. Keep task lineage and splits explicit. All newly generated examples need provenance, deduplication and benchmark exclusion. Existing artifacts remain unchanged; build new versioned bundles for the pilot.
+
+The full pretraining budget is not frozen. Earlier 2-10B and 3-5B ranges were estimates. Choose the budget and mixture after the hardware probe and task-data result, then freeze them before scaling. Public instruction tuning remains a later stage even when verified task/solution examples appear during pretraining.
 
 ## Deliverables
 
 - B0/B1/B2 benchmark harness and results (week 1)
 - Pretrained 100M checkpoint (GDN hybrid, block-diffusion objective)
+- Audited Python task generator, independent verifier, versioned family splits and isolated execution workers
+- Matched-compute task-data pilot report, including transfer correctness, per-bucket loss, unique data/reuse and total cost
 - Custom decode loop (confidence-threshold unmasking, block-level early stop at 0.97, prompt cache, block overlap, block scheduler with tunable steps)
 - TPS + pass@1 report against B0/B1/B2

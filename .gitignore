@@ -7,3 +7,4 @@ data/
 # Generated local corpus/tokenizer smoke artifacts
 artifacts/data-smoke/
 artifacts/training-v1/
+artifacts/tasks*/
